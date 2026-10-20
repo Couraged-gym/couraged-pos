@@ -107,7 +107,7 @@ function voidedRows(voided, { day, date }) {
   ]
 }
 
-const titleRows = (from, to) => [row([TITLE], 'title'), row([from === to ? longDate(from) : `${longDate(from)} to ${longDate(to)}`], 'title'), row([])]
+const titleRows = (from, to) => [row([TITLE], 'title'), row([from === to ? longDate(from) : `${longDate(from)} to ${longDate(to)}`], 'date'), row([])]
 
 // Days that had a sale or a void, in order.
 const daysOf = (data) => [...new Set([...data.lines, ...data.voided].map((x) => x.date))].sort()
@@ -165,11 +165,8 @@ export function toXlsx(XLSX, sheets) {
   const wb = XLSX.utils.book_new()
   for (const s of sheets) {
     const width = Math.max(...s.rows.map((r) => r.cells.length))
-    // Styled rows get every cell (blank text) so the yellow runs the full width.
-    const aoa = s.rows.map((r) => Array.from({ length: r.style === 'sub' || r.style === 'total' || r.style === 'head' ? width : r.cells.length }, (_, i) => {
-      const c = r.cells[i]
-      return c == null ? (r.style ? '' : null) : typeof c === 'object' ? c.v : c
-    }))
+    // Table rows get every cell (blank text) so borders and fills run the table's full width.
+    const aoa = s.rows.map((r) => r.cells.map((c) => (c == null ? (lookOf(r) ? '' : null) : typeof c === 'object' ? c.v : c)))
     const ws = XLSX.utils.aoa_to_sheet(aoa)
     s.rows.forEach((r, R) =>
       r.cells.forEach((c, C) => {
@@ -178,7 +175,7 @@ export function toXlsx(XLSX, sheets) {
     )
     // Width from the longest value in each column; titles and section labels may overflow.
     ws['!cols'] = Array.from({ length: width }, (_, C) => ({
-      wch: Math.min(40, Math.max(8, ...s.rows.filter((r) => r.style !== 'title' && r.style !== 'section').map((r) => {
+      wch: Math.min(40, Math.max(9, ...s.rows.filter((r) => r.style !== 'title' && r.style !== 'date' && r.style !== 'section').map((r) => {
         const c = r.cells[C]
         return c == null ? 0 : typeof c === 'number' ? c.toFixed(2).length + 1 : String(typeof c === 'object' ? c.v : c).length + 1
       }))),
@@ -189,8 +186,26 @@ export function toXlsx(XLSX, sheets) {
   return styleXlsx(XLSX, buf, sheets)
 }
 
-const BOLD = new Set(['title', 'section', 'head'])
-const YELLOW = new Set(['sub', 'total'])
+// The look of each kind of row, in CourageD colours. Subtotal and total rows keep the plain
+// yellow of their hand-made sheet. Rows with no style but several cells are table body rows.
+const INK = 'FF19171B'
+const GRID = 'FFD9D6DC'
+const side = (tag, style = 'thin', color = GRID) => `<${tag} style="${style}"><color rgb="${color}"/></${tag}>`
+const BORDER = {
+  grid: `<border>${side('left')}${side('right')}${side('top')}${side('bottom')}<diagonal/></border>`,
+  total: `<border>${side('left')}${side('right')}${side('top', 'medium', INK)}${side('bottom', 'medium', INK)}<diagonal/></border>`,
+}
+const LOOK = {
+  title: { font: `<b/><sz val="16"/><color rgb="${INK}"/>` },
+  date: { font: '<i/><sz val="11"/><color rgb="FF5E5A63"/>' },
+  section: { font: '<b/><sz val="12"/><color rgb="FFBA0021"/>' },
+  head: { font: '<b/><sz val="11"/><color rgb="FFFFFFFF"/>', fill: INK, border: 'grid', center: true },
+  body: { border: 'grid' },
+  sub: { font: `<b/><sz val="12"/><color rgb="${INK}"/>`, fill: 'FFFFFF00', border: 'grid' },
+  total: { font: `<b/><sz val="12"/><color rgb="${INK}"/>`, fill: 'FFFFFF00', border: 'total' },
+}
+const KEYS = Object.keys(LOOK)
+const lookOf = (r) => r.style ?? (r.cells.length > 1 ? 'body' : null)
 
 function styleXlsx(XLSX, buf, sheets) {
   const zip = XLSX.CFB.read(new Uint8Array(buf), { type: 'array' })
@@ -202,26 +217,36 @@ function styleXlsx(XLSX, buf, sheets) {
     e.size = e.content.length
   }
 
-  // A bold copy of the default font, a solid yellow fill, and for every existing cell format
-  // (number formats) a bold and a bold+yellow variant: base i -> n + 2i and n + 2i + 1.
+  // Append the fonts, fills and borders the looks use, then for every existing cell format
+  // (it carries the number format) one variant per look: base i, look k -> n + i * KEYS.length + k.
   let styles = read('/xl/styles.xml')
-  const fonts = +styles.match(/<fonts count="(\d+)"/)[1]
-  const fills = +styles.match(/<fills count="(\d+)"/)[1]
-  const font = styles.match(/<fonts[^>]*>(<font>[\s\S]*?<\/font>)/)[1].replace('<font>', '<font><b/>')
-  styles = styles
-    .replace(/<fonts count="\d+">([\s\S]*?)<\/fonts>/, (_, f) => `<fonts count="${fonts + 1}">${f}${font}</fonts>`)
-    .replace(/<fills count="\d+">([\s\S]*?)<\/fills>/, (_, f) => `<fills count="${fills + 1}">${f}<fill><patternFill patternType="solid"><fgColor rgb="FFFFFF00"/><bgColor indexed="64"/></patternFill></fill></fills>`)
+  const count = (tag) => +styles.match(new RegExp(`<${tag} count="(\\d+)"`))[1]
+  const add = (tag, items) => {
+    const start = count(tag)
+    styles = styles.replace(new RegExp(`<${tag} count="\\d+">([\\s\\S]*?)</${tag}>`), (_, x) => `<${tag} count="${start + items.length}">${x}${items.join('')}</${tag}>`)
+    return start
+  }
+  const font0 = add('fonts', KEYS.map((k) => `<font>${LOOK[k].font ?? '<sz val="12"/><color theme="1"/>'}<name val="Calibri"/><family val="2"/><scheme val="minor"/></font>`))
+  const fill0 = add('fills', KEYS.map((k) => (LOOK[k].fill ? `<fill><patternFill patternType="solid"><fgColor rgb="${LOOK[k].fill}"/><bgColor indexed="64"/></patternFill></fill>` : '<fill><patternFill patternType="none"/></fill>')))
+  const border0 = add('borders', KEYS.map((k) => BORDER[LOOK[k].border] ?? '<border><left/><right/><top/><bottom/><diagonal/></border>'))
   const xfs = styles.match(/<cellXfs count="\d+">([\s\S]*?)<\/cellXfs>/)[1].match(/<xf [^>]*\/>/g)
-  const variant = (xf, fill) => xf.replace(/fontId="\d+"/, `fontId="${fonts}" applyFont="1"`).replace(/fillId="\d+"/, fill ? `fillId="${fills}" applyFill="1"` : '$&')
-  styles = styles.replace(/<cellXfs count="\d+">[\s\S]*?<\/cellXfs>/, `<cellXfs count="${xfs.length * 3}">${xfs.join('')}${xfs.map((x) => variant(x, false) + variant(x, true)).join('')}</cellXfs>`)
+  const variant = (xf, k) => {
+    const l = LOOK[KEYS[k]]
+    const attrs = xf
+      .replace(/fontId="\d+"/, `fontId="${font0 + k}" applyFont="1"`)
+      .replace(/fillId="\d+"/, `fillId="${fill0 + k}"${l.fill ? ' applyFill="1"' : ''}`)
+      .replace(/borderId="\d+"/, `borderId="${border0 + k}" applyBorder="1"`)
+    return l.center ? attrs.replace(/\/>$/, ' applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>') : attrs
+  }
+  styles = styles.replace(/<cellXfs count="\d+">[\s\S]*?<\/cellXfs>/, `<cellXfs count="${xfs.length * (KEYS.length + 1)}">${xfs.join('')}${xfs.map((x) => KEYS.map((_, k) => variant(x, k)).join('')).join('')}</cellXfs>`)
   write('/xl/styles.xml', styles)
 
   sheets.forEach((s, k) => {
     const path = `/xl/worksheets/sheet${k + 1}.xml`
-    let xml = read(path).replace(/<row r="(\d+)"([^>]*)>([\s\S]*?)<\/row>/g, (all, r, attrs, cells) => {
-      const style = s.rows[r - 1]?.style
-      if (!BOLD.has(style) && !YELLOW.has(style)) return all
-      const to = (i) => xfs.length + 2 * i + (YELLOW.has(style) ? 1 : 0)
+    let xml = read(path).replace(/<row r="(\d+)"([^>/]*)>([\s\S]*?)<\/row>/g, (all, r, attrs, cells) => {
+      const look = KEYS.indexOf(lookOf(s.rows[r - 1] ?? { cells: [] }))
+      if (look < 0) return all
+      const to = (i) => xfs.length + i * KEYS.length + look
       const styled = cells.replace(/<c r="([A-Z]+\d+)"( s="(\d+)")?/g, (_, ref, __, i) => `<c r="${ref}" s="${to(+(i ?? 0))}"`)
       return `<row r="${r}"${attrs}>${styled}</row>`
     })

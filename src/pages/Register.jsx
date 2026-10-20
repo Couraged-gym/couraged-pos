@@ -103,6 +103,15 @@ export default function Register() {
   const change = paid == null ? null : round2(paid - total)
   const refMissing = method === 'gcash' && !/^\d{4}$/.test(gcashRef)
   const plans = lines.filter((l) => l.duration_days)
+  const planCat = products?.find((p) => p.duration_days)?.category // null until a plan has a length
+  const hasPlans = Boolean(planCat)
+  // Arriving from Members › Renew: open on the plans.
+  const fromRenew = useRef(Boolean(member))
+  useEffect(() => {
+    if (!products || !fromRenew.current) return
+    fromRenew.current = false
+    if (planCat) setCat(planCat)
+  }, [products, planCat])
   const canCharge = lines.length > 0 && !busy && !discTooBig && !refMissing && !(plans.length && !member) && (change == null || change >= 0)
 
   const maxQty = (p) => (p.kind === 'good' ? p.stock_qty : Infinity)
@@ -260,7 +269,7 @@ export default function Register() {
             count={count}
             subtotal={subtotal}
             total={total}
-            {...{ method, setMethod, tendered, setTendered, gcashRef, setGcashRef, discount, setDiscount, discTooBig, customer, setCustomer, member, setMember, plans, change, busy, error, canCharge, charge, setQty }}
+            {...{ method, setMethod, tendered, setTendered, gcashRef, setGcashRef, discount, setDiscount, discTooBig, customer, setCustomer, member, setMember, plans, hasPlans, change, busy, error, canCharge, charge, setQty }}
             onClear={() => setCart([])}
             onClose={() => setSheet(false)}
           />
@@ -346,14 +355,18 @@ function ProductTile({ p, inCart, onAdd }) {
 const darkField = 'h-11 w-full rounded-lg bg-ink-2 px-3 text-paper ring-1 ring-paper/10 outline-none transition-shadow duration-150 placeholder:text-ash focus:ring-2 focus:ring-gold'
 const chip = 'press flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold ring-1 ring-paper/10 text-ash hover:text-paper'
 
-function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setTendered, gcashRef, setGcashRef, discount, setDiscount, discTooBig, customer, setCustomer, member, setMember, plans, change, busy, error, canCharge, charge, setQty, onClear, onClose }) {
+function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setTendered, gcashRef, setGcashRef, discount, setDiscount, discTooBig, customer, setCustomer, member, setMember, plans, hasPlans, change, busy, error, canCharge, charge, setQty, onClear, onClose }) {
   const [showDiscount, setShowDiscount] = useState(false)
   const [showCustomer, setShowCustomer] = useState(false)
+  const [showMember, setShowMember] = useState(false)
   // Collapse the optional fields again once a sale clears them.
   useEffect(() => {
     if (!lines.length && !discount) setShowDiscount(false)
     if (!lines.length && !customer) setShowCustomer(false)
   }, [lines.length, discount, customer])
+  useEffect(() => {
+    if (!lines.length && !member) setShowMember(false)
+  }, [lines.length, member])
 
   return (
     <>
@@ -433,6 +446,11 @@ function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setT
                   <UserRound className="size-3.5" aria-hidden="true" /> Customer
                 </button>
               )}
+              {!showMember && !member && !plans.length && (
+                <button type="button" onClick={() => setShowMember(true)} className={chip}>
+                  <IdCard className="size-3.5" aria-hidden="true" /> Member
+                </button>
+              )}
             </div>
             <span className="text-ash">
               Subtotal <span className="text-paper">{money(subtotal)}</span>
@@ -471,7 +489,7 @@ function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setT
               </button>
             </div>
           )}
-          {(plans.length > 0 || member) && <MemberPick member={member} setMember={setMember} plans={plans} />}
+          {(plans.length > 0 || member || showMember) && <MemberPick member={member} setMember={setMember} plans={plans} hasPlans={hasPlans} onCancel={() => setShowMember(false)} />}
           <div className="flex items-end justify-between">
             <span className="font-display text-xl font-extrabold uppercase">Total</span>
             <span className="font-display text-5xl font-black leading-none short:text-4xl">
@@ -534,7 +552,7 @@ function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setT
 }
 
 // Who a membership plan is for. Their new end date shows before charging, so staff can tell them.
-function MemberPick({ member, setMember, plans }) {
+function MemberPick({ member, setMember, plans, hasPlans, onCancel }) {
   const [q, setQ] = useState('')
   const [hits, setHits] = useState(null)
   useEffect(() => {
@@ -560,6 +578,9 @@ function MemberPick({ member, setMember, plans }) {
           <span className="block text-xs text-ash">
             {days ? `Paid until ${fmtDay(addDays(start, days - 1), { month: 'short', day: 'numeric', year: 'numeric' })}` : member.ends_on ? `${member.ends_on >= today ? 'Active until' : 'Expired'} ${fmtDay(member.ends_on)} · add their plan` : 'No plan yet · add their plan'}
           </span>
+          {!days && !hasPlans && (
+            <span className="mt-1 block text-xs text-[#FFD36B]">No membership plans yet. In Inventory, add one as a Service with a membership length in days (e.g. Monthly, 30).</span>
+          )}
         </p>
         <button type="button" onClick={() => setMember(null)} aria-label={`Remove member ${member.full_name}`} className="press grid size-9 place-items-center text-ash hover:text-paper">
           <X className="size-4" aria-hidden="true" />
@@ -569,11 +590,18 @@ function MemberPick({ member, setMember, plans }) {
   }
   return (
     <div>
-      <label className="relative block">
-        <span className="text-xs font-semibold text-gold">Who is the {plans[0].name} for?</span>
-        <IdCard className="pointer-events-none absolute bottom-2.5 left-3 size-4 text-ash" aria-hidden="true" />
-        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Member name" className={`${darkField} mt-1 h-9 pl-9`} />
-      </label>
+      <span className="flex items-end gap-1">
+        <label className="relative block flex-1">
+          <span className="text-xs font-semibold text-gold">{plans.length ? `Who is the ${plans[0].name} for?` : 'Which member?'}</span>
+          <IdCard className="pointer-events-none absolute bottom-2.5 left-3 size-4 text-ash" aria-hidden="true" />
+          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Member name" className={`${darkField} mt-1 h-9 pl-9`} />
+        </label>
+        {!plans.length && (
+          <button type="button" onClick={onCancel} aria-label="Cancel choosing a member" className="press grid size-9 place-items-center text-ash hover:text-paper">
+            <X className="size-4" aria-hidden="true" />
+          </button>
+        )}
+      </span>
       {hits?.length > 0 && (
         <ul className="mt-1 overflow-hidden rounded-lg ring-1 ring-paper/10">
           {hits.map((m) => (

@@ -68,7 +68,7 @@ const xml = (p) => new TextDecoder().decode(XLSX.CFB.find(zip, p).content)
 assert.match(xml('/xl/styles.xml'), /<font><b\/>/); assert.match(xml('/xl/styles.xml'), /FFFFFF00/)
 assert.match(xml('/xl/worksheets/sheet3.xml'), /<pane ySplit="5" topLeftCell="A6" activePane="bottomLeft" state="frozen"\/>/); ok('bold header, yellow fill and frozen header row are in the file')
 const grandRow = xml('/xl/worksheets/sheet3.xml').match(new RegExp(`<row r="${ref.slice(1)}"[^>]*>([\\s\\S]*?)</row>`))[1]
-const xfs = xml('/xl/styles.xml').match(/<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/)[1].match(/<xf [^>]*\/>/g)
+const xfs = xml('/xl/styles.xml').match(/<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/)[1].match(/<xf [^>]*?(\/>|>[\s\S]*?<\/xf>)/g)
 for (const s of grandRow.match(/s="(\d+)"/g)) assert.match(xfs[+s.slice(3, -1)], /applyFill="1"/)
 ok('every cell in the grand total row is yellow')
 console.log('all passed')
