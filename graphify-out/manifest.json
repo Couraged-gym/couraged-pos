@@ -6,10 +6,10 @@
     "semantic_hash": "35231a44c027b920f15180c3dbbb31f6"
   },
   "package.json": {
-    "mtime": 1791957110.3722584,
-    "seen": 1791984310.6664238,
-    "ast_hash": "a27177f0249a5cd2270cb91e5d847a71",
-    "semantic_hash": "a27177f0249a5cd2270cb91e5d847a71"
+    "mtime": 1792207250.6611075,
+    "seen": 1792460239.5134523,
+    "ast_hash": "3128c996ccdf116fa8f3ad9ea0b2986c",
+    "semantic_hash": "3128c996ccdf116fa8f3ad9ea0b2986c"
   },
   "server/staff.js": {
     "mtime": 1791798440.9243512,
@@ -24,10 +24,10 @@
     "semantic_hash": "fc06a587872dee6791cda3d8ec896945"
   },
   "src/App.jsx": {
-    "mtime": 1791957179.3288658,
-    "seen": 1791984310.6664279,
-    "ast_hash": "be94055ca52c21e9eb3d9139d93514e8",
-    "semantic_hash": "be94055ca52c21e9eb3d9139d93514e8"
+    "mtime": 1792200266.6701746,
+    "seen": 1792460239.5134602,
+    "ast_hash": "9706f135bd2ab900b78e1d168d3e7d5e",
+    "semantic_hash": "9706f135bd2ab900b78e1d168d3e7d5e"
   },
   "src/auth.jsx": {
     "mtime": 1791794963.246411,
@@ -138,22 +138,22 @@
     "semantic_hash": "aba1d23dbd0cb2108d9d1093026dfa4d"
   },
   "src/pages/Register.jsx": {
-    "mtime": 1791903582.3479962,
-    "seen": 1791984310.666447,
-    "ast_hash": "92e7fdf03ca551bf4fae40414f8375de",
-    "semantic_hash": "92e7fdf03ca551bf4fae40414f8375de"
+    "mtime": 1792200266.8735645,
+    "seen": 1792460239.513492,
+    "ast_hash": "fd71f3c33a1860bf209a80384ab380a9",
+    "semantic_hash": "fd71f3c33a1860bf209a80384ab380a9"
   },
   "src/pages/Sales.jsx": {
-    "mtime": 1791903843.0810444,
-    "seen": 1791984310.6664479,
-    "ast_hash": "402593056c8439a73e0fe3aa31f0192e",
-    "semantic_hash": "402593056c8439a73e0fe3aa31f0192e"
+    "mtime": 1792200266.8764052,
+    "seen": 1792460239.5134933,
+    "ast_hash": "28bbaba1cb80cd14d47d3150573c2b49",
+    "semantic_hash": "28bbaba1cb80cd14d47d3150573c2b49"
   },
   "src/pages/Staff.jsx": {
-    "mtime": 1791798608.8086064,
-    "seen": 1791984310.6664486,
-    "ast_hash": "d7c3a127d660ab8e2cb94f5fe697fab6",
-    "semantic_hash": "d7c3a127d660ab8e2cb94f5fe697fab6"
+    "mtime": 1792200266.8784432,
+    "seen": 1792460239.5134945,
+    "ast_hash": "3129dab5d5ee3670292a756d0ab8d42b",
+    "semantic_hash": "3129dab5d5ee3670292a756d0ab8d42b"
   },
   "src/pages/payroll/Employees.jsx": {
     "mtime": 1791808332.1001377,
@@ -246,10 +246,10 @@
     "semantic_hash": "d1744352398f1fe2ddc33251aac5bbb6"
   },
   "vite.config.js": {
-    "mtime": 1791957266.78037,
-    "seen": 1791984310.666464,
-    "ast_hash": "95a656115a8d87b349e35f103b4dea90",
-    "semantic_hash": "95a656115a8d87b349e35f103b4dea90"
+    "mtime": 1792207250.6732564,
+    "seen": 1792460239.5135157,
+    "ast_hash": "9f2244635bfb1a73439d3ab6508b1f7b",
+    "semantic_hash": "9f2244635bfb1a73439d3ab6508b1f7b"
   },
   "README.md": {
     "mtime": 1791903556.6073987,
@@ -292,5 +292,35 @@
     "seen": 1791984310.6664712,
     "ast_hash": "a644e7a7b7615530c2f70e7835438779",
     "semantic_hash": "a644e7a7b7615530c2f70e7835438779"
+  },
+  "functions/api/staff.js": {
+    "mtime": 1792200266.8400376,
+    "seen": 1792460239.5134492,
+    "ast_hash": "674748dfa704c77eb26d5abb651caaf6",
+    "semantic_hash": "674748dfa704c77eb26d5abb651caaf6"
+  },
+  "public/helper/receipt-helper.ps1": {
+    "mtime": 1792209281.282498,
+    "seen": 1792460239.5134542,
+    "ast_hash": "3441d2d99432747d739678afab2daa66",
+    "semantic_hash": "3441d2d99432747d739678afab2daa66"
+  },
+  "src/config/receipt.js": {
+    "mtime": 1792207250.6671822,
+    "seen": 1792460239.5134716,
+    "ast_hash": "f117bfa89e70abaa10d4c766a35927ac",
+    "semantic_hash": "f117bfa89e70abaa10d4c766a35927ac"
+  },
+  "src/lib/printReceipt.js": {
+    "mtime": 1792207250.6692097,
+    "seen": 1792460239.513479,
+    "ast_hash": "938df2dd4069451f068f7132d5f0821c",
+    "semantic_hash": "938df2dd4069451f068f7132d5f0821c"
+  },
+  "src/lib/printReceipt.test.mjs": {
+    "mtime": 1792207250.671232,
+    "seen": 1792460239.5134802,
+    "ast_hash": "6140756ed87355b384eb392f9803a030",
+    "semantic_hash": "6140756ed87355b384eb392f9803a030"
   }
 }
