@@ -231,6 +231,10 @@ assert.equal((await as(X, `select * from members`)).length, (await one('select c
 const codes = await as(T, `select member_no::int n, full_name from v_members order by member_no`)
 assert.deepEqual(codes.map((c) => c.n), [1, 2, 3]); assert.equal(codes[0].full_name, 'Juan Dela Cruz'); ok('members are numbered in the order they joined (M0001…)')
 await fails(T, `update members set member_no = 99 where id = $1`, /permission denied|DEFAULT/, [mem]); ok('member codes cannot be changed')
+// 012: student price.
+await as(T, `update products set student_price = 900 where id = $1`, [mid])
+assert.equal((await one(`select new_value from product_changes where product_id = '${mid}' and field = 'student_price'`)).new_value, '900.00'); ok('staff set a student price, logged in history')
+await fails(T, `update products set student_price = 5000 where id = $1`, /student_price_max/, [mid]); ok('student price cannot be above the normal price')
 // 010: sales export.
 await fails(S, `select sales_export(current_date, current_date)`, /Only an admin/); ok('staff cannot export sales')
 const p9 = (await one(`select id from products where code = 'CFH09'`)).id

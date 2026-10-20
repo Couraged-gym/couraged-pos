@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
 import { animate, createScope, svg } from 'animejs'
-import { CircleAlert, CircleCheck, IdCard, Loader2, Minus, Plus, Search, ShoppingBag, Tag, UserRound, X } from 'lucide-react'
+import { CircleAlert, CircleCheck, GraduationCap, IdCard, Loader2, Minus, Plus, Search, ShoppingBag, Tag, UserRound, X } from 'lucide-react'
 import { supabase } from '../lib/supabase.js'
-import { manilaToday, memberCode, money, moneyInput, parseMemberCode, quickCash, round2, uuid } from '../lib/util.js'
+import { manilaToday, memberCode, money, moneyInput, parseMemberCode, round2, uuid } from '../lib/util.js'
 import { CountUp, EASE_OUT, stockOf } from '../components/ui.jsx'
 import { useAuth } from '../auth.jsx'
 import { printReceipt, saleReceipt, validUntil } from '../lib/printReceipt.js'
@@ -33,6 +33,7 @@ export default function Register() {
   const [tendered, setTendered] = useState('')
   const [gcashRef, setGcashRef] = useState('') // last 4 digits of the GCash reference
   const [discount, setDiscount] = useState('')
+  const [student, setStudent] = useState(false)
   const [customer, setCustomer] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
@@ -95,7 +96,10 @@ export default function Register() {
   const qtyIn = (id) => cart.find((l) => l.id === id)?.qty ?? 0
   const count = lines.reduce((n, l) => n + l.qty, 0)
   const subtotal = round2(lines.reduce((s, l) => s + l.qty * l.selling_price, 0))
-  const disc = Number(discount) || 0
+  // Student button: each line with a student price is charged that price instead (taken off as a discount).
+  const studentOff = round2(lines.reduce((s, l) => s + (l.student_price == null ? 0 : l.qty * (l.selling_price - l.student_price)), 0))
+  const studentOn = student && studentOff > 0
+  const disc = round2((Number(discount) || 0) + (studentOn ? studentOff : 0))
   const discTooBig = disc > subtotal
   const total = round2(Math.max(subtotal - disc, 0))
   // Blank tendered means the customer paid the exact amount.
@@ -152,6 +156,7 @@ export default function Register() {
       p_items: lines.map((l) => ({ product_id: l.id, qty: l.qty })),
       p_payment_method: method,
       p_discount: disc,
+      p_note: studentOn ? 'Student discount' : null,
       p_amount_tendered: paid,
       p_customer_name: customer.trim() || null,
       p_client_ref: clientRef.current,
@@ -189,6 +194,7 @@ export default function Register() {
     setTendered('')
     setGcashRef('')
     setDiscount('')
+    setStudent(false)
     setCustomer('')
     setMember(null)
     setMethod('cash')
@@ -277,7 +283,7 @@ export default function Register() {
             count={count}
             subtotal={subtotal}
             total={total}
-            {...{ method, setMethod, tendered, setTendered, gcashRef, setGcashRef, discount, setDiscount, discTooBig, customer, setCustomer, member, setMember, plans, hasPlans, change, busy, error, canCharge, charge, setQty }}
+            {...{ method, setMethod, tendered, setTendered, gcashRef, setGcashRef, discount, setDiscount, discTooBig, studentOff, studentOn, setStudent, customer, setCustomer, member, setMember, plans, hasPlans, change, busy, error, canCharge, charge, setQty }}
             onClear={() => setCart([])}
             onClose={() => setSheet(false)}
           />
@@ -363,7 +369,7 @@ function ProductTile({ p, inCart, onAdd }) {
 const darkField = 'h-11 w-full rounded-lg bg-ink-2 px-3 text-paper ring-1 ring-paper/10 outline-none transition-shadow duration-150 placeholder:text-ash focus:ring-2 focus:ring-gold'
 const chip = 'press flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold ring-1 ring-paper/10 text-ash hover:text-paper'
 
-function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setTendered, gcashRef, setGcashRef, discount, setDiscount, discTooBig, customer, setCustomer, member, setMember, plans, hasPlans, change, busy, error, canCharge, charge, setQty, onClear, onClose }) {
+function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setTendered, gcashRef, setGcashRef, discount, setDiscount, discTooBig, studentOff, studentOn, setStudent, customer, setCustomer, member, setMember, plans, hasPlans, change, busy, error, canCharge, charge, setQty, onClear, onClose }) {
   const [showDiscount, setShowDiscount] = useState(false)
   const [showCustomer, setShowCustomer] = useState(false)
   const [showMember, setShowMember] = useState(false)
@@ -443,7 +449,12 @@ function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setT
       <div className="shrink-0 space-y-3.5 border-t border-paper/10 px-5 pt-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] short:space-y-2 short:pt-2.5 short:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <div className="tabular space-y-2 text-sm">
           <div className="flex min-h-9 items-center justify-between gap-2">
-            <div className="flex gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
+              {studentOff > 0 && (
+                <button type="button" onClick={() => setStudent(!studentOn)} aria-pressed={studentOn} className={`${chip} ${studentOn ? 'bg-gold text-ink ring-gold hover:text-ink' : ''}`}>
+                  <GraduationCap className="size-3.5" aria-hidden="true" /> Student
+                </button>
+              )}
               {!showDiscount && (
                 <button type="button" onClick={() => setShowDiscount(true)} className={chip}>
                   <Tag className="size-3.5" aria-hidden="true" /> Discount
@@ -478,6 +489,12 @@ function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setT
                   <X className="size-4" aria-hidden="true" />
                 </button>
               </span>
+            </div>
+          )}
+          {studentOn && (
+            <div className="flex justify-between text-ash">
+              <span>Student discount</span>
+              <span className="tabular text-paper">−{money(studentOff)}</span>
             </div>
           )}
           {discTooBig && (
@@ -515,7 +532,7 @@ function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setT
           ))}
         </div>
 
-        {method === 'cash' && lines.length > 0 && <CashIn total={total} tendered={tendered} setTendered={setTendered} change={change} />}
+        {method === 'cash' && lines.length > 0 && <CashIn tendered={tendered} setTendered={setTendered} change={change} />}
         {method === 'gcash' && lines.length > 0 && (
           <label className="block">
             <span className="text-sm text-ash">Last 4 digits of the GCash reference no.</span>
@@ -642,7 +659,7 @@ function MemberPick({ member, setMember, plans, hasPlans, onCancel }) {
   )
 }
 
-function CashIn({ total, tendered, setTendered, change }) {
+function CashIn({ tendered, setTendered, change }) {
   const short = change < 0
   return (
     <div className="space-y-2">
@@ -650,23 +667,13 @@ function CashIn({ total, tendered, setTendered, change }) {
         <label className="relative block">
           <span className="sr-only">Cash received</span>
           <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ash">₱</span>
-          <input inputMode="decimal" autoComplete="off" value={tendered} onChange={moneyInput(setTendered)} placeholder={`Cash received`} className={`${darkField} tabular h-14 pl-7 text-lg short:h-12`} />
+          <input inputMode="decimal" autoComplete="off" value={tendered} onChange={moneyInput(setTendered)} placeholder="Cash received (blank = exact)" className={`${darkField} tabular h-14 pl-7 text-lg short:h-12`} />
         </label>
         {/* No count-up here: the figure must be right the instant the cashier reads it. */}
         <div className={`flex h-14 min-w-36 flex-col short:h-12 justify-center rounded-lg px-3.5 text-right transition-colors duration-150 ${short ? 'bg-crimson/25 ring-1 ring-crimson/60' : 'bg-ink-2'}`} aria-live="polite">
           <span className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-ash">{short ? 'Short by' : 'Change'}</span>
           <span className={`tabular font-display text-3xl font-black leading-none ${short ? 'text-paper' : 'text-gold'}`}>{money(Math.abs(change))}</span>
         </div>
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        <button type="button" onClick={() => setTendered('')} aria-pressed={tendered === ''} className={`${chip} ${tendered === '' ? 'bg-paper/10 text-paper' : ''}`}>
-          Exact {money(total)}
-        </button>
-        {quickCash(total).map((v) => (
-          <button key={v} type="button" onClick={() => setTendered(String(v))} aria-pressed={tendered === String(v)} className={`${chip} tabular ${tendered === String(v) ? 'bg-paper/10 text-paper' : ''}`}>
-            {money(v)}
-          </button>
-        ))}
       </div>
     </div>
   )

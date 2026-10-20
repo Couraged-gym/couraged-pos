@@ -5,7 +5,7 @@ Separate app and Vercel project from the marketing site (`../couraged`); same br
 
 ## Setup
 
-1. Supabase › SQL Editor: run `supabase/schema.sql` (already done), then every numbered patch in `supabase/` in order (`001_…` to `011_…`). Each patch is safe to run again.
+1. Supabase › SQL Editor: run `supabase/schema.sql` (already done), then every numbered patch in `supabase/` in order (`001_…` to `012_…`). Each patch is safe to run again.
 2. Supabase › Authentication › Sign In / Providers: turn **off** "Allow new users to sign up". Create staff accounts yourself under Authentication › Users › Add user. New accounts start `inactive`; give them a role:
    ```sql
    update public.profiles set role = 'staff' where id = (select id from auth.users where email = 'staff@example.com');
@@ -20,7 +20,7 @@ New Vercel project from this repo; add `VITE_SUPABASE_URL` and `VITE_SUPABASE_AN
 
 ## Memberships
 
-Membership plans and other services (no stock) live in **Members › Plans**, not Inventory. Give a plan a length in days (Monthly = 30, Annual = 365) to track it per member; leave it blank for walk-ins and other services. Each plan shows as a card on the register. The Memberships analytics tab reads the `Membership` category.
+Membership plans and other services (no stock) live in **Members › Plans**, not Inventory. Give a plan a length in days (Monthly = 30, Annual = 365) to track it per member; leave it blank for walk-ins and other services. A plan can also have a **student price**: on the register, the Student button charges that instead (recorded as a discount, with the sale noted "Student discount"). Each plan shows as a card on the register. The Memberships analytics tab reads the `Membership` category.
 
 Register people in **Members**; each gets a member code like **M0012**. To sell or renew, add the plan card on the register and enter their code (or name) when the cart asks who it's for, or type the code in the register search and press Enter. The days are added after their current end date, or from today if they've lapsed; voiding the sale takes them back off. Members shows Active / Expired / All with a search by name, code or phone.
 

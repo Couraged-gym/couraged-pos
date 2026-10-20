@@ -217,6 +217,7 @@ function Plans() {
                 </span>
                 <span className="tabular mt-auto pt-3 font-display text-3xl font-black leading-none">{money(p.selling_price)}</span>
                 <span className={`mt-1.5 text-xs font-semibold ${p.duration_days ? 'text-[#0B6B35]' : 'text-smoke'}`}>{p.duration_days ? `${p.duration_days} days per member` : 'Not tracked per member'}</span>
+                {p.student_price != null && <span className="tabular mt-0.5 text-xs font-semibold text-[#6B4E00]">Student {money(p.student_price)}</span>}
               </button>
             </li>
           ))}
