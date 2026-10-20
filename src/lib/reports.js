@@ -17,7 +17,7 @@ async function logoData() {
 }
 
 // Supabase returns at most 1,000 rows per request; page through so a long range is complete.
-async function fetchAll(query) {
+export async function fetchAll(query) {
   const out = []
   for (let from = 0; ; from += 1000) {
     const { data, error } = await query().range(from, from + 999)

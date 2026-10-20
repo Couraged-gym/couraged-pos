@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { NavLink, Route, Routes } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
 import { Bar, BarChart, CartesianGrid, LabelList, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowDownRight, ArrowUpRight, CircleAlert, Download, FileText, Loader2, Minus } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, CircleAlert, Download, FileSpreadsheet, FileText, Loader2, Minus } from 'lucide-react'
 import { supabase } from '../lib/supabase.js'
 import { money } from '../lib/util.js'
 import RangePicker, { addDays, fmtDay, monthStart, presets } from '../components/RangePicker.jsx'
 import { CountUp, EASE_OUT, Sheet } from '../components/ui.jsx'
 import { useAuth } from '../auth.jsx'
 import { downloadSalesReport, reportPeriods } from '../lib/reports.js'
+import ExportSheet from './SalesExport.jsx'
 
 // Validated (dataviz validator, light surface): cost/profit pair passes CVD + contrast. Same values as the marketing dashboard.
 // Gold = profit and crimson = money out on every chart; sales lines are blue. The trio is validated too.
@@ -48,6 +49,7 @@ export default function Analytics() {
   const [report, setReport] = useState(null)
   const [error, setError] = useState(null)
   const [pdf, setPdf] = useState(false)
+  const [xport, setXport] = useState(false)
 
   useEffect(() => {
     let live = true
@@ -73,6 +75,9 @@ export default function Analytics() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <RangePicker opts={opts} range={range} setRange={setRange} />
+          <button type="button" onClick={() => setXport(true)} className="press flex h-11 items-center gap-2 rounded-lg px-4 font-semibold ring-1 ring-ink/15">
+            <FileSpreadsheet className="size-4" aria-hidden="true" /> Export sales
+          </button>
           <button type="button" onClick={() => setPdf(true)} className="press flex h-11 items-center gap-2 rounded-lg bg-ink px-4 font-semibold text-paper">
             <Download className="size-4" aria-hidden="true" /> Download PDF
           </button>
@@ -109,6 +114,7 @@ export default function Analytics() {
         </div>
       )}
       <AnimatePresence>{pdf && <DownloadSheet key="pdf" range={range} onClose={() => setPdf(false)} />}</AnimatePresence>
+      <AnimatePresence>{xport && <ExportSheet key="export" onClose={() => setXport(false)} />}</AnimatePresence>
     </main>
   )
 }

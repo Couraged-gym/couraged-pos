@@ -27,7 +27,7 @@ function wrap(s, w) {
 
 // receipt: { storeName, headerLines[], footerLines[], paperWidth (58|80), receiptNo, date, cashier, customer,
 //   items[{ name, qty, lineTotal }], subtotal, discount, total,
-//   paymentMethod (label), paymentRef, cash, change, banner (e.g. 'REPRINT', 'VOIDED') }
+//   paymentMethod (label), paymentRef, cash, change, banner (e.g. 'REPRINT', 'VOIDED'), validUntil (membership) }
 // Returns the ESC/POS commands as a string of byte values (all below 128).
 export function receiptBytes(r) {
   const W = r.paperWidth === 80 ? 48 : 32 // characters per line in the standard font
@@ -51,6 +51,7 @@ export function receiptBytes(r) {
     row('Date', r.date),
     r.cashier ? row('Staff', r.cashier) : '',
     r.customer ? row('Customer', r.customer) : '',
+    r.validUntil ? row('Member until', r.validUntil) : '',
     hr,
     ...r.items.map((i) => row(`${i.qty} x ${i.name}`, peso(i.lineTotal))),
     hr,
@@ -68,6 +69,12 @@ export function receiptBytes(r) {
   ].join('')
 }
 
+// Latest end date of the membership this sale paid for, e.g. "Nov 19, 2026" (member_periods read back with the sale).
+export const validUntil = (sale) => {
+  const end = (sale.member_periods ?? []).map((p) => p.ends_on).sort().at(-1)
+  return end ? new Date(end + 'T00:00:00Z').toLocaleDateString('en-PH', { timeZone: 'UTC', dateStyle: 'medium' }) : null
+}
+
 // A saved sale row (with sale_items) -> receiptBytes input. Voided sales always print VOIDED.
 export const saleReceipt = (sale, { cashier, method, banner } = {}) => ({
   ...RECEIPT,
@@ -76,6 +83,7 @@ export const saleReceipt = (sale, { cashier, method, banner } = {}) => ({
   date: new Date(sale.sold_at ?? Date.now()).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }),
   cashier,
   customer: sale.customer_name,
+  validUntil: validUntil(sale),
   items: sale.sale_items.map((i) => ({ name: i.product_name, qty: i.qty, lineTotal: i.line_total })),
   subtotal: sale.subtotal,
   discount: sale.discount,

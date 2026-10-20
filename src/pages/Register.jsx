@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
 import { animate, createScope, svg } from 'animejs'
-import { CircleAlert, CircleCheck, Loader2, Minus, Plus, Search, ShoppingBag, Tag, UserRound, X } from 'lucide-react'
+import { CircleAlert, CircleCheck, IdCard, Loader2, Minus, Plus, Search, ShoppingBag, Tag, UserRound, X } from 'lucide-react'
 import { supabase } from '../lib/supabase.js'
 import { manilaToday, money, moneyInput, quickCash, round2, uuid } from '../lib/util.js'
 import { CountUp, EASE_OUT, stockOf } from '../components/ui.jsx'
 import { useAuth } from '../auth.jsx'
-import { printReceipt, saleReceipt } from '../lib/printReceipt.js'
+import { printReceipt, saleReceipt, validUntil } from '../lib/printReceipt.js'
 import { RECEIPT } from '../config/receipt.js'
+import { addDays, fmtDay } from '../components/RangePicker.jsx'
 
 const METHODS = [
   ['cash', 'Cash'],
@@ -36,6 +38,13 @@ export default function Register() {
   const [error, setError] = useState(null)
   const [receipt, setReceipt] = useState(null)
   const [sheet, setSheet] = useState(false)
+  // Member a plan is for; arrives from Members › Renew, or is picked in the cart.
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [member, setMember] = useState(location.state?.member ?? null)
+  useEffect(() => {
+    if (location.state?.member) navigate(location.pathname, { replace: true }) // a refresh shouldn't bring it back
+  }, []) // once
   // One ref per checkout, reused on retries so a dropped connection can't record the sale twice.
   const clientRef = useRef(uuid())
   const searchRef = useRef(null)
@@ -44,7 +53,7 @@ export default function Register() {
     const [p, t] = await Promise.all([
       supabase
         .from('products')
-        .select('id, code, name, category, kind, selling_price, stock_qty, reorder_level')
+        .select('*') // includes duration_days once patch 009 is in
         .eq('is_active', true)
         .order('category')
         .order('name'),
@@ -93,7 +102,8 @@ export default function Register() {
   const paid = method === 'cash' ? (tendered === '' ? total : Number(tendered)) : null
   const change = paid == null ? null : round2(paid - total)
   const refMissing = method === 'gcash' && !/^\d{4}$/.test(gcashRef)
-  const canCharge = lines.length > 0 && !busy && !discTooBig && !refMissing && (change == null || change >= 0)
+  const plans = lines.filter((l) => l.duration_days)
+  const canCharge = lines.length > 0 && !busy && !discTooBig && !refMissing && !(plans.length && !member) && (change == null || change >= 0)
 
   const maxQty = (p) => (p.kind === 'good' ? p.stock_qty : Infinity)
   const add = (p) => {
@@ -129,6 +139,7 @@ export default function Register() {
       p_customer_name: customer.trim() || null,
       p_client_ref: clientRef.current,
       p_payment_ref: method === 'gcash' ? gcashRef : null,
+      ...(member && { p_member_id: member.id }), // left out otherwise, so sales still work before patch 009
     })
     if (error) {
       setBusy(false)
@@ -138,7 +149,7 @@ export default function Register() {
     }
     const { data: sale } = await supabase
       .from('sales')
-      .select('sale_no, sold_at, subtotal, discount, total, amount_tendered, change_due, payment_method, payment_ref, customer_name, sale_items(product_name, qty, line_total)')
+      .select(`sale_no, sold_at, subtotal, discount, total, amount_tendered, change_due, payment_method, payment_ref, customer_name, sale_items(product_name, qty, line_total)${member ? ', member_periods(ends_on)' : ''}`)
       .eq('id', id)
       .single()
     // The sale is saved either way; fall back to what the register knows if the read-back failed.
@@ -162,6 +173,7 @@ export default function Register() {
     setGcashRef('')
     setDiscount('')
     setCustomer('')
+    setMember(null)
     setMethod('cash')
     setSheet(false)
     setBusy(false)
@@ -248,7 +260,7 @@ export default function Register() {
             count={count}
             subtotal={subtotal}
             total={total}
-            {...{ method, setMethod, tendered, setTendered, gcashRef, setGcashRef, discount, setDiscount, discTooBig, customer, setCustomer, change, busy, error, canCharge, charge, setQty }}
+            {...{ method, setMethod, tendered, setTendered, gcashRef, setGcashRef, discount, setDiscount, discTooBig, customer, setCustomer, member, setMember, plans, change, busy, error, canCharge, charge, setQty }}
             onClear={() => setCart([])}
             onClose={() => setSheet(false)}
           />
@@ -334,7 +346,7 @@ function ProductTile({ p, inCart, onAdd }) {
 const darkField = 'h-11 w-full rounded-lg bg-ink-2 px-3 text-paper ring-1 ring-paper/10 outline-none transition-shadow duration-150 placeholder:text-ash focus:ring-2 focus:ring-gold'
 const chip = 'press flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold ring-1 ring-paper/10 text-ash hover:text-paper'
 
-function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setTendered, gcashRef, setGcashRef, discount, setDiscount, discTooBig, customer, setCustomer, change, busy, error, canCharge, charge, setQty, onClear, onClose }) {
+function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setTendered, gcashRef, setGcashRef, discount, setDiscount, discTooBig, customer, setCustomer, member, setMember, plans, change, busy, error, canCharge, charge, setQty, onClear, onClose }) {
   const [showDiscount, setShowDiscount] = useState(false)
   const [showCustomer, setShowCustomer] = useState(false)
   // Collapse the optional fields again once a sale clears them.
@@ -416,7 +428,7 @@ function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setT
                   <Tag className="size-3.5" aria-hidden="true" /> Discount
                 </button>
               )}
-              {!showCustomer && (
+              {!showCustomer && !member && (
                 <button type="button" onClick={() => setShowCustomer(true)} className={chip}>
                   <UserRound className="size-3.5" aria-hidden="true" /> Customer
                 </button>
@@ -459,6 +471,7 @@ function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setT
               </button>
             </div>
           )}
+          {(plans.length > 0 || member) && <MemberPick member={member} setMember={setMember} plans={plans} />}
           <div className="flex items-end justify-between">
             <span className="font-display text-xl font-extrabold uppercase">Total</span>
             <span className="font-display text-5xl font-black leading-none short:text-4xl">
@@ -517,6 +530,64 @@ function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setT
         </button>
       </div>
     </>
+  )
+}
+
+// Who a membership plan is for. Their new end date shows before charging, so staff can tell them.
+function MemberPick({ member, setMember, plans }) {
+  const [q, setQ] = useState('')
+  const [hits, setHits] = useState(null)
+  useEffect(() => {
+    const t = q.trim()
+    if (!t) return setHits(null)
+    let live = true
+    const timer = setTimeout(async () => {
+      const { data } = await supabase.from('v_members').select('id, full_name, phone, ends_on').ilike('full_name', `%${t}%`).order('full_name').limit(5)
+      if (live) setHits(data ?? [])
+    }, 200)
+    return () => ((live = false), clearTimeout(timer))
+  }, [q])
+
+  if (member) {
+    const today = manilaToday()
+    const days = plans.reduce((s, l) => s + l.duration_days * l.qty, 0)
+    const start = member.ends_on && member.ends_on >= today ? addDays(member.ends_on, 1) : today
+    return (
+      <div className="flex items-center gap-2 rounded-lg bg-ink-2 px-3 py-2 ring-1 ring-paper/10">
+        <IdCard className="size-4 shrink-0 text-gold" aria-hidden="true" />
+        <p className="min-w-0 flex-1 leading-tight">
+          <span className="block truncate font-semibold text-paper">{member.full_name}</span>
+          <span className="block text-xs text-ash">
+            {days ? `Paid until ${fmtDay(addDays(start, days - 1), { month: 'short', day: 'numeric', year: 'numeric' })}` : member.ends_on ? `${member.ends_on >= today ? 'Active until' : 'Expired'} ${fmtDay(member.ends_on)} · add their plan` : 'No plan yet · add their plan'}
+          </span>
+        </p>
+        <button type="button" onClick={() => setMember(null)} aria-label={`Remove member ${member.full_name}`} className="press grid size-9 place-items-center text-ash hover:text-paper">
+          <X className="size-4" aria-hidden="true" />
+        </button>
+      </div>
+    )
+  }
+  return (
+    <div>
+      <label className="relative block">
+        <span className="text-xs font-semibold text-gold">Who is the {plans[0].name} for?</span>
+        <IdCard className="pointer-events-none absolute bottom-2.5 left-3 size-4 text-ash" aria-hidden="true" />
+        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Member name" className={`${darkField} mt-1 h-9 pl-9`} />
+      </label>
+      {hits?.length > 0 && (
+        <ul className="mt-1 overflow-hidden rounded-lg ring-1 ring-paper/10">
+          {hits.map((m) => (
+            <li key={m.id}>
+              <button type="button" onClick={() => setMember(m)} className="press flex w-full justify-between gap-2 bg-ink-2 px-3 py-2 text-left hover:bg-paper/10">
+                <span className="truncate text-paper">{m.full_name}</span>
+                <span className="shrink-0 text-xs text-ash">{m.phone ?? ''}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {hits?.length === 0 && <p className="mt-1 text-xs text-ash">No member called "{q.trim()}". Register them in Members first.</p>}
+    </div>
   )
 }
 
@@ -656,6 +727,12 @@ function Receipt({ sale, cashier, onDone }) {
               <div className="flex justify-between text-smoke">
                 <dt>Customer</dt>
                 <dd>{sale.customer_name}</dd>
+              </div>
+            )}
+            {validUntil(sale) && (
+              <div className="flex justify-between font-semibold">
+                <dt>Member until</dt>
+                <dd>{validUntil(sale)}</dd>
               </div>
             )}
           </dl>

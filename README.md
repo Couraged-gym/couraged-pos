@@ -5,7 +5,7 @@ Separate app and Vercel project from the marketing site (`../couraged`); same br
 
 ## Setup
 
-1. Supabase › SQL Editor: run `supabase/schema.sql` (already done), then every numbered patch in `supabase/` in order (`001_…` to `008_…`). Each patch is safe to run again.
+1. Supabase › SQL Editor: run `supabase/schema.sql` (already done), then every numbered patch in `supabase/` in order (`001_…` to `010_…`). Each patch is safe to run again.
 2. Supabase › Authentication › Sign In / Providers: turn **off** "Allow new users to sign up". Create staff accounts yourself under Authentication › Users › Add user. New accounts start `inactive`; give them a role:
    ```sql
    update public.profiles set role = 'staff' where id = (select id from auth.users where email = 'staff@example.com');
@@ -22,17 +22,21 @@ New Vercel project from this repo; add `VITE_SUPABASE_URL` and `VITE_SUPABASE_AN
 
 Sell memberships through the register as products with `kind = 'service'` and `category = 'Membership'` (no stock tracking). The Memberships analytics tab reads that category.
 
+To track who is paid up, give a plan a **membership length in days** in Inventory (30 for a month, 365 for a year). Register people under **Members**; selling a plan with a length asks which member it's for and adds the days after their current end date (or from today if they've lapsed). Voiding that sale takes the days back off. Members shows Active / Expired / All with a name or phone search; Renew opens the register with the member already chosen. Plans without a length (walk-in day passes) sell as before.
+
 ## What each part does
 
 - **Register** (staff + admin): checkout, cash change, receipt.
 - **Inventory** (staff + admin): receive deliveries, count shelves, write off spoilage, add and edit products and prices (admins can also delete). Stock only changes through these actions, and every change is in the product's History with who made it.
+- **Members** (staff + admin): register members, see who is active or expired, renew from the register.
 - **Sales** (admin only): every receipt with filters, cash-in-drawer totals, and voiding with a reason.
 - **Staff** (admin only): add logins with a temporary password, change access (admin, staff, inactive), set a new password. There is always at least one admin.
 - **Expenses** (admin only): one-off expenses and a monthly-bills checklist (rent, electricity, water…), with optional receipt photos/PDFs in a private storage bucket. Never deleted: voided with a reason, and every edit is logged.
 - **Payroll** (admin only): employees (own pay schedule, monthly/daily/hourly rate, government numbers), pay runs from draft to finalized, SSS + PhilHealth + Pag-IBIG + BIR withholding settled month-to-date, editable rate tables with effective dates (pre-filled with 2025 rates; have the accountant confirm). Finalizing posts salaries and employer contributions to Expenses; voiding a run voids them.
 - **Reports** (admin only): Analytics > Download PDF gives a sales & profit report for this/last week, this/last month or the dates on screen (P&L vs previous period, breakdowns, payroll, every expense with OR numbers, signature lines). Each pay run has a payslips PDF (summary, remittance table, one payslip per person); drafts are stamped DRAFT.
 - **Analytics** (admin only): General, Merchandise, Memberships and Staff tabs for any date range.
+- **Export sales** (admin only, Analytics > Export sales): the payment sheet (SOLD ITEMS / SERVICES with GCash, Cash and Total) as CSV or Excel. Daily (a tab per day plus Summary), Summary (grouped by product) or a transaction log. Uses the price and cost at the time of each sale; voided sales are listed separately and left out of the totals; totals are after discounts, so they match Analytics. Excel is written with SheetJS (installed from cdn.sheetjs.com, not npm), and the bold headers, yellow subtotal rows and frozen header row are added to the file afterwards, since the free SheetJS edition doesn't write styles.
 
 ## Tests
 
-`npm test` runs every suite. `npm run test:payroll` checks the payroll arithmetic with worked examples; `npm run test:pdf` builds both PDFs. `npm run test:api` checks the staff server function's rules. `npm run test:db` runs the schema and every patch in an in-process Postgres (PGlite) and checks permissions, checkout, stock and reports as staff, admin and an inactive user.
+`npm test` runs every suite. `npm run test:payroll` checks the payroll arithmetic with worked examples; `npm run test:pdf` builds both PDFs. `npm run test:export` builds every export from sample data and reads the Excel file back. `npm run test:api` checks the staff server function's rules. `npm run test:db` runs the schema and every patch in an in-process Postgres (PGlite) and checks permissions, checkout, stock and reports as staff, admin and an inactive user.

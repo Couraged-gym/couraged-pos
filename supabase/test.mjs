@@ -199,4 +199,52 @@ await as(A, `delete from payroll_runs where id = $1`, [run2])
 assert.equal((await one(`select count(*)::int c from payroll_runs where id = '${run2}'`)).c, 0); ok('draft runs can be deleted')
 await as(A, `insert into payroll_rates (kind, effective_from, config) values ('sss', '2026-01-01', '{"ee_rate":0.05}')`)
 await fails(A, `update payroll_rates set notes = 'x'`, /permission denied/); ok('new rate versions can be added; old ones never edited')
+// 009: members.
+const day = (n) => (n ? `(${`'${today}'`}::date + ${n})::text` : `'${today}'`)
+const dayOf = async (n) => (await one(`select ${day(n)} d`)).d
+const mem = (await as(T, `insert into members (full_name, phone, created_by) values ('Juan Dela Cruz', '0917', $1) returning id`, [T]))[0].id; ok('staff registers a member')
+await fails(T, `delete from members where id = $1`, /permission denied/, [mem]); ok('members cannot be deleted')
+await as(T, `update products set duration_days = 30 where id = $1`, [mid])
+const plan = JSON.stringify([{ product_id: mid, qty: 1 }])
+await fails(T, `select record_sale($1::jsonb)`, /Choose the member/, [plan]); ok('a plan with a length needs a member')
+const m1 = (await as(T, `select record_sale($1::jsonb, 'cash', 0, null, null, null, null, null, null, $2) as id`, [plan, mem]))[0].id
+let vm = (await as(T, `select status, ends_on::text as ends_on from v_members where id = $1`, [mem]))[0]
+assert.equal(vm.status, 'active'); assert.equal(vm.ends_on, await dayOf(29))
+assert.equal((await one(`select customer_name from sales where id = '${m1}'`)).customer_name, 'Juan Dela Cruz'); ok('first plan: active today to +29 days, sale named after the member')
+const m2 = (await as(T, `select record_sale($1::jsonb, 'cash', 0, null, null, null, null, null, null, $2) as id`, [plan, mem]))[0].id
+vm = (await as(T, `select status, ends_on::text as ends_on from v_members where id = $1`, [mem]))[0]
+assert.equal(vm.ends_on, await dayOf(59)); ok('early renewal starts the day after the current end (+59)')
+await as(A, `select void_sale($1, 'Paid twice')`, [m2])
+vm = (await as(T, `select status, ends_on::text as ends_on from v_members where id = $1`, [mem]))[0]
+assert.equal(vm.ends_on, await dayOf(29)); ok('voiding the renewal takes the days back off')
+await fails(T, `insert into member_periods (member_id, sale_id, product_id, plan_name, starts_on, ends_on) values ($1, $2, $3, 'x', current_date, current_date)`, /permission denied/, [mem, m1, mid]); ok('periods only come from a sale')
+const old = (await one(`insert into members (full_name) values ('Lapsed Lea') returning id`)).id
+await db.query(`insert into member_periods (member_id, sale_id, product_id, plan_name, starts_on, ends_on) values ($1, $2, $3, 'Monthly', ${day(-40)}::date, ${day(-11)}::date)`, [old, m1, mid])
+assert.equal((await as(T, `select status from v_members where id = $1`, [old]))[0].status, 'expired')
+await as(T, `select record_sale($1::jsonb, 'cash', 0, null, null, null, null, null, null, $2)`, [plan, old])
+vm = (await as(T, `select status, ends_on::text as ends_on from v_members where id = $1`, [old]))[0]
+assert.deepEqual([vm.status, vm.ends_on], ['active', await dayOf(29)]); ok('lapsed member renews from today, not from the old end date')
+await one(`insert into members (full_name) values ('New Nina')`)
+assert.equal((await as(T, `select status from v_members where full_name = 'New Nina'`))[0].status, 'new'); ok('registered without a plan shows as new')
+assert.equal((await as(X, `select * from members`)).length, (await one('select count(*)::int c from members')).c); ok('admins see members too')
+// 010: sales export.
+await fails(S, `select sales_export(current_date, current_date)`, /Only an admin/); ok('staff cannot export sales')
+const p9 = (await one(`select id from products where code = 'CFH09'`)).id
+await as(S, `insert into stock_movements (product_id, movement_type, qty, unit_cost, created_by) values ($1, 'purchase', 10, 39, $2)`, [p9, S])
+await as(T, `select record_sale($1::jsonb, 'gcash', 5, null, null, null, null, null, '1234')`, [JSON.stringify([{ product_id: p9, qty: 3 }])]) // with a ₱5 discount
+const ex = (await as(A, `select sales_export($1::date - 6, $1::date) as r`, [today]))[0].r
+const rep = (await as(A, `select sales_report($1::date - 6, $1::date) as r`, [today]))[0].r
+const sum = (rows, f) => rows.reduce((s, x) => s + f(x), 0)
+const paid = (x) => +x.cash + +x.gcash + +x.other
+const exRevenue = sum(ex.lines, paid) - sum(ex.discounts, paid)
+const exProfit = sum(ex.lines, (x) => x.qty * (x.unit_price - x.unit_cost)) - sum(ex.discounts, paid)
+assert.equal(Math.round(exRevenue * 100), Math.round(rep.totals.revenue * 100))
+assert.equal(Math.round(exProfit * 100), Math.round(rep.totals.gross_profit * 100)); ok(`export lines − discounts = report revenue ₱${rep.totals.revenue} and profit ₱${rep.totals.gross_profit}`)
+assert.equal(sum(ex.lines, (x) => x.qty), +rep.totals.items); ok('export units = report items sold (voids excluded)')
+assert.ok(ex.lines.every((x) => Math.abs(paid(x) - x.qty * x.unit_price) < 0.005)); ok('each row: GCash + Cash + Other = qty × snapshot price')
+assert.equal(ex.voided.length, rep.voids.count); assert.ok(ex.voided.some((v) => v.reason === 'Paid twice' && v.items === '1 x Monthly')); ok('voided receipts listed with items and reason')
+await as(A, `update products set selling_price = 999 where id = $1`, [mid])
+const ex2 = (await as(A, `select sales_export($1::date - 6, $1::date) as r`, [today]))[0].r
+assert.deepEqual(ex2.lines, ex.lines); ok('changing a price today leaves past export rows untouched')
+assert.equal(ex.log, null); assert.equal((await as(A, `select sales_export($1::date, $1::date, true) as r`, [today]))[0].r.log.length > 0, true); ok('transaction log only when asked for')
 console.log('all passed')

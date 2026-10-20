@@ -21,27 +21,28 @@ export function presets() {
 
 
 // Preset chips plus native from/to date inputs. range: { key, from, to } as 'YYYY-MM-DD'.
-export default function RangePicker({ opts, range, setRange }) {
+// id keeps two pickers on screen at once (page + sheet) apart.
+export default function RangePicker({ opts, range, setRange, id = 'range' }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex gap-1 overflow-x-auto rounded-lg bg-paper p-1 ring-1 ring-ink/5" role="group" aria-label="Date range">
         {opts.map(([key, label, from, to]) => (
           <button key={key} type="button" aria-pressed={range.key === key} onClick={() => setRange({ key, from, to })} className="press relative h-9 shrink-0 rounded-md px-3 text-sm font-semibold">
-            {range.key === key && <motion.span layoutId="range-pill" className="absolute inset-0 rounded-md bg-ink" transition={{ type: 'spring', duration: 0.3, bounce: 0.1 }} />}
+            {range.key === key && <motion.span layoutId={`${id}-pill`} className="absolute inset-0 rounded-md bg-ink" transition={{ type: 'spring', duration: 0.3, bounce: 0.1 }} />}
             <span className={`relative transition-colors duration-150 ${range.key === key ? 'text-paper' : 'text-smoke hover:text-ink'}`}>{label}</span>
           </button>
         ))}
       </div>
       <div className="flex items-center gap-1.5 text-sm">
-        <label className="sr-only" htmlFor="from">
+        <label className="sr-only" htmlFor={`${id}-from`}>
           From
         </label>
-        <input id="from" type="date" value={range.from} max={range.to} onChange={(e) => e.target.value && setRange({ key: 'custom', from: e.target.value, to: range.to })} className="tabular h-11 rounded-lg bg-paper px-2.5 ring-1 ring-ink/10 outline-none focus:ring-2 focus:ring-gold" />
+        <input id={`${id}-from`} type="date" value={range.from} max={range.to} onChange={(e) => e.target.value && setRange({ key: 'custom', from: e.target.value, to: range.to })} className="tabular h-11 rounded-lg bg-paper px-2.5 ring-1 ring-ink/10 outline-none focus:ring-2 focus:ring-gold" />
         <span className="text-smoke">to</span>
-        <label className="sr-only" htmlFor="to">
+        <label className="sr-only" htmlFor={`${id}-to`}>
           To
         </label>
-        <input id="to" type="date" value={range.to} min={range.from} max={manilaToday()} onChange={(e) => e.target.value && setRange({ key: 'custom', from: range.from, to: e.target.value })} className="tabular h-11 rounded-lg bg-paper px-2.5 ring-1 ring-ink/10 outline-none focus:ring-2 focus:ring-gold" />
+        <input id={`${id}-to`} type="date" value={range.to} min={range.from} max={manilaToday()} onChange={(e) => e.target.value && setRange({ key: 'custom', from: range.from, to: e.target.value })} className="tabular h-11 rounded-lg bg-paper px-2.5 ring-1 ring-ink/10 outline-none focus:ring-2 focus:ring-gold" />
       </div>
     </div>
   )

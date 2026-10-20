@@ -456,17 +456,18 @@ function StockTab({ product, initial, onDone }) {
   )
 }
 
-const BLANK = { name: '', code: '', category: '', kind: 'good', selling_price: '', unit_cost: '', reorder_level: '5', is_active: true }
+const BLANK = { name: '', code: '', category: '', kind: 'good', selling_price: '', unit_cost: '', reorder_level: '5', is_active: true, duration_days: '' }
 
 function DetailsTab({ product, categories, onDone, onDeleted }) {
   const create = !product
   const { isAdmin } = useAuth()
-  const [f, setF] = useState(() => (create ? BLANK : { ...product, selling_price: String(product.selling_price), unit_cost: String(product.unit_cost), reorder_level: String(product.reorder_level) }))
+  const [f, setF] = useState(() => (create ? BLANK : { ...product, selling_price: String(product.selling_price), unit_cost: String(product.unit_cost), reorder_level: String(product.reorder_level), duration_days: product.duration_days == null ? '' : String(product.duration_days) }))
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
   const set = (k) => (v) => setF((x) => ({ ...x, [k]: v }))
   const price = Number(f.selling_price) || 0
   const cost = Number(f.unit_cost) || 0
+  const days = f.kind === 'service' && Number(f.duration_days) > 0 ? Number(f.duration_days) : null
 
   const clean = () => ({
     name: f.name.trim(),
@@ -477,6 +478,8 @@ function DetailsTab({ product, categories, onDone, onDeleted }) {
     unit_cost: cost,
     reorder_level: Number(f.reorder_level) || 0,
     is_active: f.is_active,
+    // Only sent when set (or being cleared), so this form keeps working before patch 009 is run.
+    ...(days != null || product?.duration_days != null ? { duration_days: days } : {}),
   })
   const changes = create ? clean() : Object.fromEntries(Object.entries(clean()).filter(([k, v]) => v !== (typeof product[k] === 'number' ? Number(product[k]) : product[k])))
 
@@ -556,6 +559,13 @@ function DetailsTab({ product, categories, onDone, onDeleted }) {
           'Enter a price to see the profit per sale.'
         )}
       </p>
+      {f.kind === 'service' && (
+        <label className={label}>
+          Membership length in days
+          <input inputMode="numeric" value={f.duration_days} onChange={intInput(set('duration_days'))} placeholder="Not a plan" className={`${field} tabular mt-1.5 w-32`} />
+          <span className="mt-1.5 block text-sm font-normal text-smoke">For plans tracked per member: 30 for a month, 365 for a year. Selling one then asks who it's for and adds the days to their membership. Leave blank for walk-ins and other services.</span>
+        </label>
+      )}
       {f.kind === 'good' && (
         <label className={label}>
           Reorder when stock is at or below
@@ -625,9 +635,9 @@ function DeleteProduct({ product, onDeleted }) {
   )
 }
 
-const FIELD_LABEL = { name: 'Name', code: 'Code', category: 'Category', kind: 'Type', selling_price: 'Price', unit_cost: 'Cost', reorder_level: 'Reorder level', is_active: 'Register' }
+const FIELD_LABEL = { name: 'Name', code: 'Code', category: 'Category', kind: 'Type', selling_price: 'Price', unit_cost: 'Cost', reorder_level: 'Reorder level', is_active: 'Register', duration_days: 'Membership length' }
 const fmtVal = (field, v) =>
-  v == null ? '–' : field === 'selling_price' || field === 'unit_cost' ? money(v) : field === 'is_active' ? (v === 'true' ? 'shown' : 'hidden') : field === 'kind' ? (v === 'good' ? 'item' : 'service') : v
+  v == null ? '–' : field === 'selling_price' || field === 'unit_cost' ? money(v) : field === 'is_active' ? (v === 'true' ? 'shown' : 'hidden') : field === 'kind' ? (v === 'good' ? 'item' : 'service') : field === 'duration_days' ? `${v} days` : v
 
 const MOVE = {
   purchase: [PackagePlus, 'text-active', (m) => `+${m.qty} received${m.supplier ? ` from ${m.supplier}` : ''}${m.unit_cost != null ? ` at ${money(m.unit_cost)}` : ''}`],

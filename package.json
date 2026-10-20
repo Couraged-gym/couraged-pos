@@ -10,10 +10,11 @@
     "preview": "vite preview",
     "test:db": "node supabase/test.mjs",
     "test:api": "node server/staff.test.mjs",
-    "test": "node src/lib/payroll.test.mjs && node src/lib/pdf.test.mjs && node src/lib/printReceipt.test.mjs && node server/staff.test.mjs && node supabase/test.mjs",
+    "test": "node src/lib/payroll.test.mjs && node src/lib/pdf.test.mjs && node src/lib/printReceipt.test.mjs && node src/lib/salesExport.test.mjs && node server/staff.test.mjs && node supabase/test.mjs",
     "test:payroll": "node src/lib/payroll.test.mjs",
     "test:pdf": "node src/lib/pdf.test.mjs",
-    "test:receipt": "node src/lib/printReceipt.test.mjs"
+    "test:receipt": "node src/lib/printReceipt.test.mjs",
+    "test:export": "node src/lib/salesExport.test.mjs"
   },
   "dependencies": {
     "@fontsource-variable/big-shoulders-display": "^5.3.0",
@@ -27,7 +28,8 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router": "^8.4.0",
-    "recharts": "^3.10.1"
+    "recharts": "^3.10.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.2.17",
