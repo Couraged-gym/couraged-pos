@@ -27,7 +27,8 @@ export default function Inventory() {
   const [flash, setFlash] = useState(null)
 
   const load = useCallback(async () => {
-    const { data, error } = await supabase.from('products').select('*').is('deleted_at', null).order('category').order('name')
+    // Stock items only; services and membership plans live in Members › Plans.
+    const { data, error } = await supabase.from('products').select('*').eq('kind', 'good').is('deleted_at', null).order('category').order('name')
     if (error) setError(error.message)
     else {
       setError(null)
@@ -268,7 +269,7 @@ function IconBtn({ Icon, label, onClick }) {
   )
 }
 
-function Drawer({ product, tab: initial = 'stock', categories, people, onClose, onSaved, onDeleted }) {
+export function Drawer({ product, kind = 'good', tab: initial = 'stock', categories, people, onClose, onSaved, onDeleted }) {
   const create = !product
   const [tab, setTab] = useState(create ? 'details' : initial.split(':')[0])
   const [notice, setNotice] = useState(null)
@@ -282,7 +283,7 @@ function Drawer({ product, tab: initial = 'stock', categories, people, onClose, 
 
   return (
     <Sheet
-      title={create ? 'New product' : product.name}
+      title={create ? (kind === 'service' ? 'New plan' : 'New product') : product.name}
       subtitle={!create && `${product.code} · ${product.category} · ${money(product.selling_price)}`}
       onClose={onClose}
       header={!create && <Segmented id="drawer-tab" dark className="mt-4" value={tab} onChange={(t) => (setTab(t), setNotice(null))} options={tabs} />}
@@ -302,7 +303,7 @@ function Drawer({ product, tab: initial = 'stock', categories, people, onClose, 
         )}
       </AnimatePresence>
       {tab === 'stock' && product && <StockTab key={product.stock_qty} product={product} initial={initial.split(':')[1]} onDone={done} />}
-      {tab === 'details' && <DetailsTab product={product} categories={categories} onDone={done} onDeleted={onDeleted} />}
+      {tab === 'details' && <DetailsTab product={product} kind={kind} categories={categories} onDone={done} onDeleted={onDeleted} />}
       {tab === 'history' && product && <HistoryTab product={product} people={people} />}
     </Sheet>
   )
@@ -458,10 +459,11 @@ function StockTab({ product, initial, onDone }) {
 
 const BLANK = { name: '', code: '', category: '', kind: 'good', selling_price: '', unit_cost: '', reorder_level: '5', is_active: true, duration_days: '' }
 
-function DetailsTab({ product, categories, onDone, onDeleted }) {
+// kind comes from where it's added: Inventory adds stock items, Members › Plans adds services.
+function DetailsTab({ product, kind, categories, onDone, onDeleted }) {
   const create = !product
   const { isAdmin } = useAuth()
-  const [f, setF] = useState(() => (create ? BLANK : { ...product, selling_price: String(product.selling_price), unit_cost: String(product.unit_cost), reorder_level: String(product.reorder_level), duration_days: product.duration_days == null ? '' : String(product.duration_days) }))
+  const [f, setF] = useState(() => (create ? { ...BLANK, kind, category: kind === 'service' ? 'Membership' : '' } : { ...product, selling_price: String(product.selling_price), unit_cost: String(product.unit_cost), reorder_level: String(product.reorder_level), duration_days: product.duration_days == null ? '' : String(product.duration_days) }))
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
   const set = (k) => (v) => setF((x) => ({ ...x, [k]: v }))
@@ -513,25 +515,11 @@ function DetailsTab({ product, categories, onDone, onDeleted }) {
           Category
           <input list="categories" value={f.category} onChange={(e) => set('category')(e.target.value)} placeholder="Drinks" className={`${field} mt-1.5`} />
           <datalist id="categories">
-            {[...new Set([...categories, 'Membership'])].map((c) => (
+            {[...new Set([...categories, ...(f.kind === 'service' ? ['Membership'] : [])])].map((c) => (
               <option key={c} value={c} />
             ))}
           </datalist>
         </label>
-      </div>
-      <div>
-        <p className={label}>Type</p>
-        <Segmented
-          id="kind"
-          className="mt-1.5"
-          value={f.kind}
-          onChange={set('kind')}
-          options={[
-            ['good', 'Item with stock'],
-            ['service', 'Service, no stock'],
-          ]}
-        />
-        {f.category.trim().toLowerCase() === 'membership' && f.kind === 'good' && <p className="mt-1.5 text-sm text-[#7A5A00]">Memberships are usually a service, so they never run out.</p>}
       </div>
       <div className="grid grid-cols-2 gap-3">
         <label className={label}>

@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { animate, createScope, svg } from 'animejs'
 import { CircleAlert, CircleCheck, IdCard, Loader2, Minus, Plus, Search, ShoppingBag, Tag, UserRound, X } from 'lucide-react'
 import { supabase } from '../lib/supabase.js'
-import { manilaToday, money, moneyInput, quickCash, round2, uuid } from '../lib/util.js'
+import { manilaToday, memberCode, money, moneyInput, parseMemberCode, quickCash, round2, uuid } from '../lib/util.js'
 import { CountUp, EASE_OUT, stockOf } from '../components/ui.jsx'
 import { useAuth } from '../auth.jsx'
 import { printReceipt, saleReceipt, validUntil } from '../lib/printReceipt.js'
@@ -133,6 +133,14 @@ export default function Register() {
     if (hit) {
       add(hit)
       setQuery('')
+    } else if (/^m\d+$/.test(q)) {
+      // A member code (typed or scanned from their card): attach that member to the sale.
+      findMember(parseMemberCode(q)).then((m) => {
+        if (m) {
+          setMember(m)
+          setQuery('')
+        } else setError(`No member with code ${memberCode(parseMemberCode(q))}.`)
+      })
     }
   }
 
@@ -551,6 +559,9 @@ function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setT
   )
 }
 
+const MEMBER_COLS = 'id, member_no, full_name, phone, ends_on'
+const findMember = async (no) => (await supabase.from('v_members').select(MEMBER_COLS).eq('member_no', no).maybeSingle()).data
+
 // Who a membership plan is for. Their new end date shows before charging, so staff can tell them.
 function MemberPick({ member, setMember, plans, hasPlans, onCancel }) {
   const [q, setQ] = useState('')
@@ -559,9 +570,11 @@ function MemberPick({ member, setMember, plans, hasPlans, onCancel }) {
     const t = q.trim()
     if (!t) return setHits(null)
     let live = true
+    // A code (M0012, m12, 12) finds that member; anything else searches names.
     const timer = setTimeout(async () => {
-      const { data } = await supabase.from('v_members').select('id, full_name, phone, ends_on').ilike('full_name', `%${t}%`).order('full_name').limit(5)
-      if (live) setHits(data ?? [])
+      const no = parseMemberCode(t)
+      const rows = no ? [await findMember(no)].filter(Boolean) : (await supabase.from('v_members').select(MEMBER_COLS).ilike('full_name', `%${t}%`).order('full_name').limit(5)).data
+      if (live) setHits(rows ?? [])
     }, 200)
     return () => ((live = false), clearTimeout(timer))
   }, [q])
@@ -574,12 +587,14 @@ function MemberPick({ member, setMember, plans, hasPlans, onCancel }) {
       <div className="flex items-center gap-2 rounded-lg bg-ink-2 px-3 py-2 ring-1 ring-paper/10">
         <IdCard className="size-4 shrink-0 text-gold" aria-hidden="true" />
         <p className="min-w-0 flex-1 leading-tight">
-          <span className="block truncate font-semibold text-paper">{member.full_name}</span>
+          <span className="block truncate font-semibold text-paper">
+            {member.full_name} {member.member_no && <span className="tabular text-xs text-gold">{memberCode(member.member_no)}</span>}
+          </span>
           <span className="block text-xs text-ash">
             {days ? `Paid until ${fmtDay(addDays(start, days - 1), { month: 'short', day: 'numeric', year: 'numeric' })}` : member.ends_on ? `${member.ends_on >= today ? 'Active until' : 'Expired'} ${fmtDay(member.ends_on)} · add their plan` : 'No plan yet · add their plan'}
           </span>
           {!days && !hasPlans && (
-            <span className="mt-1 block text-xs text-[#FFD36B]">No membership plans yet. In Inventory, add one as a Service with a membership length in days (e.g. Monthly, 30).</span>
+            <span className="mt-1 block text-xs text-[#FFD36B]">No membership plans yet. Add one in Members › Plans (e.g. Monthly, 30 days).</span>
           )}
         </p>
         <button type="button" onClick={() => setMember(null)} aria-label={`Remove member ${member.full_name}`} className="press grid size-9 place-items-center text-ash hover:text-paper">
@@ -594,7 +609,15 @@ function MemberPick({ member, setMember, plans, hasPlans, onCancel }) {
         <label className="relative block flex-1">
           <span className="text-xs font-semibold text-gold">{plans.length ? `Who is the ${plans[0].name} for?` : 'Which member?'}</span>
           <IdCard className="pointer-events-none absolute bottom-2.5 left-3 size-4 text-ash" aria-hidden="true" />
-          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Member name" className={`${darkField} mt-1 h-9 pl-9`} />
+          <input
+            autoFocus
+            autoComplete="off"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && hits?.length && (e.preventDefault(), setMember(hits[0]))}
+            placeholder="Member code (M0012) or name"
+            className={`${darkField} mt-1 h-9 pl-9`}
+          />
         </label>
         {!plans.length && (
           <button type="button" onClick={onCancel} aria-label="Cancel choosing a member" className="press grid size-9 place-items-center text-ash hover:text-paper">
@@ -608,13 +631,13 @@ function MemberPick({ member, setMember, plans, hasPlans, onCancel }) {
             <li key={m.id}>
               <button type="button" onClick={() => setMember(m)} className="press flex w-full justify-between gap-2 bg-ink-2 px-3 py-2 text-left hover:bg-paper/10">
                 <span className="truncate text-paper">{m.full_name}</span>
-                <span className="shrink-0 text-xs text-ash">{m.phone ?? ''}</span>
+                {m.member_no && <span className="tabular shrink-0 text-xs text-gold">{memberCode(m.member_no)}</span>}
               </button>
             </li>
           ))}
         </ul>
       )}
-      {hits?.length === 0 && <p className="mt-1 text-xs text-ash">No member called "{q.trim()}". Register them in Members first.</p>}
+      {hits?.length === 0 && <p className="mt-1 text-xs text-ash">No member matches "{q.trim()}". Register them in Members first.</p>}
     </div>
   )
 }

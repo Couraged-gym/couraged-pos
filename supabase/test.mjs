@@ -227,6 +227,10 @@ assert.deepEqual([vm.status, vm.ends_on], ['active', await dayOf(29)]); ok('laps
 await one(`insert into members (full_name) values ('New Nina')`)
 assert.equal((await as(T, `select status from v_members where full_name = 'New Nina'`))[0].status, 'new'); ok('registered without a plan shows as new')
 assert.equal((await as(X, `select * from members`)).length, (await one('select count(*)::int c from members')).c); ok('admins see members too')
+// 011: member codes.
+const codes = await as(T, `select member_no::int n, full_name from v_members order by member_no`)
+assert.deepEqual(codes.map((c) => c.n), [1, 2, 3]); assert.equal(codes[0].full_name, 'Juan Dela Cruz'); ok('members are numbered in the order they joined (M0001…)')
+await fails(T, `update members set member_no = 99 where id = $1`, /permission denied|DEFAULT/, [mem]); ok('member codes cannot be changed')
 // 010: sales export.
 await fails(S, `select sales_export(current_date, current_date)`, /Only an admin/); ok('staff cannot export sales')
 const p9 = (await one(`select id from products where code = 'CFH09'`)).id

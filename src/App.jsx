@@ -76,7 +76,7 @@ function Shell() {
         </span>
         <nav aria-label="Main" className="flex min-w-0 gap-1 overflow-x-auto sm:ml-4">
           {NAV.filter((n) => isAdmin || !n[3]).map(([label, to, Icon]) => (
-            <NavLink key={to} to={to} end className="relative flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold">
+            <NavLink key={to} to={to} end={to === '/'} className="relative flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold">
               {({ isActive }) => (
                 <>
                   {isActive && <motion.span layoutId="nav-pill" className="absolute inset-0 rounded-lg bg-paper/10" transition={{ type: 'spring', duration: 0.35, bounce: 0.1 }} />}
@@ -102,7 +102,7 @@ function Shell() {
         <Routes>
         <Route path="/" element={<Register />} />
         <Route path="/inventory" element={<Inventory />} />
-        <Route path="/members" element={<Members />} />
+        <Route path="/members/*" element={<Members />} />
         <Route path="/sales" element={<Sales />} />
         {isAdmin && <Route path="/staff" element={<Staff />} />}
         {isAdmin && <Route path="/expenses" element={<Expenses />} />}

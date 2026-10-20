@@ -24,3 +24,7 @@ export function quickCash(total) {
 
 // Money fields are text, not type=number: a mouse wheel over a number input silently changes the amount.
 export const moneyInput = (set) => (e) => /^\d*\.?\d{0,2}$/.test(e.target.value) && set(e.target.value)
+
+// Member numbers show as M0012; staff can type "M12", "m0012" or just "12".
+export const memberCode = (n) => 'M' + String(n).padStart(4, '0')
+export const parseMemberCode = (s) => (/^m?\d{1,9}$/i.test(s.trim()) ? Number(s.trim().replace(/^m/i, '')) : null)

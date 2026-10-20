@@ -1,16 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router'
-import { AnimatePresence } from 'motion/react'
-import { CircleAlert, Loader2, RefreshCw, Search, UserRoundPlus } from 'lucide-react'
+import { NavLink, Route, Routes, useNavigate } from 'react-router'
+import { AnimatePresence, motion } from 'motion/react'
+import { CircleAlert, EyeOff, Loader2, Plus, RefreshCw, Search, UserRoundPlus } from 'lucide-react'
 import { supabase } from '../lib/supabase.js'
-import { manilaToday } from '../lib/util.js'
+import { manilaToday, memberCode, money, parseMemberCode } from '../lib/util.js'
 import { fetchAll } from '../lib/reports.js'
 import { fmtDay } from '../components/RangePicker.jsx'
 import { Segmented, Sheet } from '../components/ui.jsx'
 import { Notice, Problem, StatusPill, Submit, field, label } from '../components/form.jsx'
+import { Drawer } from './Inventory.jsx'
 
 const daysLeft = (end) => Math.round((Date.parse(end) - Date.parse(manilaToday())) / 864e5)
-const missingPatch = (e) => (/schema cache|does not exist/i.test(e.message) ? 'The database is missing an update. In Supabase › SQL Editor, run supabase/009_members.sql, then refresh this page.' : e.message)
+const missingPatch = (e) => (/schema cache|does not exist/i.test(e.message) ? 'The database is missing an update. In Supabase › SQL Editor, run supabase/009_members.sql and 011_member_codes.sql, then refresh this page.' : e.message)
 
 // Words first, colour second.
 export function standing(m) {
@@ -22,9 +23,39 @@ export function standing(m) {
 }
 
 // Renewing and first plans are sold on the register, so payment, receipt and reports stay in one place.
-const toRegister = (navigate, m) => navigate('/', { state: { member: { id: m.id, full_name: m.full_name, ends_on: m.ends_on ?? null } } })
+const toRegister = (navigate, m) => navigate('/', { state: { member: { id: m.id, member_no: m.member_no, full_name: m.full_name, ends_on: m.ends_on ?? null } } })
+
+const TABS = [
+  ['Members', '/members'],
+  ['Plans', '/members/plans'],
+]
 
 export default function Members() {
+  return (
+    <main className="mx-auto max-w-[90rem] px-4 py-6 sm:px-6 lg:px-10">
+      <h1 className="font-display text-5xl font-black uppercase leading-none">Members</h1>
+      <p className="mt-1 text-smoke">Register members here, then sell or renew their plan on the register with their member code.</p>
+      <nav aria-label="Members" className="mt-6 flex gap-1 overflow-x-auto border-b border-ink/10">
+        {TABS.map(([text, to]) => (
+          <NavLink key={text} to={to} end className="relative shrink-0 px-4 pt-1 pb-3 text-sm font-semibold">
+            {({ isActive }) => (
+              <>
+                <span className={`transition-colors duration-150 ${isActive ? 'text-ink' : 'text-smoke hover:text-ink'}`}>{text}</span>
+                {isActive && <motion.span layoutId="mem-tab" className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-gold" transition={{ type: 'spring', duration: 0.3, bounce: 0.1 }} />}
+              </>
+            )}
+          </NavLink>
+        ))}
+      </nav>
+      <Routes>
+        <Route index element={<MemberList />} />
+        <Route path="plans" element={<Plans />} />
+      </Routes>
+    </main>
+  )
+}
+
+function MemberList() {
   const navigate = useNavigate()
   const [all, setAll] = useState(null)
   const [error, setError] = useState(null)
@@ -48,22 +79,13 @@ export default function Members() {
   const count = (s) => (all ?? []).filter((m) => m.status === s).length
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase()
-    return (all ?? []).filter((m) => (tab === 'all' || m.status === tab) && (!t || m.full_name.toLowerCase().includes(t) || (m.phone ?? '').includes(t)))
+    const no = parseMemberCode(t)
+    return (all ?? []).filter((m) => (tab === 'all' || m.status === tab) && (!t || m.full_name.toLowerCase().includes(t) || m.member_no === no || (m.phone ?? '').includes(t)))
   }, [all, tab, q])
   const member = all?.find((m) => m.id === open)
 
   return (
-    <main className="mx-auto max-w-[90rem] px-4 py-6 sm:px-6 lg:px-10">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-display text-5xl font-black uppercase leading-none">Members</h1>
-          <p className="mt-1 text-smoke">Who's paid up, who's lapsed. Register a member, then sell their plan on the register.</p>
-        </div>
-        <button type="button" onClick={() => setOpen('new')} className="press flex h-11 items-center gap-2 rounded-lg bg-gold px-4 font-semibold text-ink">
-          <UserRoundPlus className="size-4" aria-hidden="true" /> Register member
-        </button>
-      </header>
-
+    <>
       <div className="mt-6 flex flex-col gap-3 md:flex-row md:items-center">
         <Segmented
           id="members-tab"
@@ -77,10 +99,13 @@ export default function Members() {
           ]}
         />
         <label className="relative block md:ml-auto md:w-72">
-          <span className="sr-only">Search members by name or phone</span>
+          <span className="sr-only">Search members by name, code or phone</span>
           <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-smoke" aria-hidden="true" />
-          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name or phone" className={`${field} pl-10`} />
+          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, code or phone" className={`${field} pl-10`} />
         </label>
+        <button type="button" onClick={() => setOpen('new')} className="press flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-gold px-4 font-semibold text-ink">
+          <UserRoundPlus className="size-4" aria-hidden="true" /> Register member
+        </button>
       </div>
 
       {saved && <div className="mt-4"><Notice>{saved}</Notice></div>}
@@ -104,7 +129,9 @@ export default function Members() {
             return (
               <li key={m.id} className="flex items-center gap-3 px-4 py-3 transition-colors duration-150 hover:bg-mist/60">
                 <button type="button" onClick={() => setOpen(m.id)} className="min-w-0 flex-1 text-left">
-                  <span className="block truncate font-semibold">{m.full_name}</span>
+                  <span className="block truncate font-semibold">
+                    {m.full_name} {m.member_no && <span className="tabular ml-1 rounded bg-ink px-1.5 py-0.5 text-xs font-bold text-gold">{memberCode(m.member_no)}</span>}
+                  </span>
                   <span className="block truncate text-sm text-smoke">{[m.plan_name, m.phone].filter(Boolean).join(' · ') || 'No details'}</span>
                 </button>
                 <StatusPill tone={tone}>{text}</StatusPill>
@@ -128,7 +155,92 @@ export default function Members() {
           />
         )}
       </AnimatePresence>
-    </main>
+    </>
+  )
+}
+
+// Membership plans and other services (no stock). Each shows as a card on the register.
+function Plans() {
+  const [items, setItems] = useState(null)
+  const [people, setPeople] = useState({})
+  const [error, setError] = useState(null)
+  const [open, setOpen] = useState(null) // { id } or { create: true }
+  const [flash, setFlash] = useState(null)
+
+  const load = useCallback(async () => {
+    const { data, error } = await supabase.from('products').select('*').eq('kind', 'service').is('deleted_at', null).order('category').order('name')
+    if (error) setError(error.message)
+    else {
+      setError(null)
+      setItems(data)
+    }
+  }, [])
+  useEffect(() => {
+    load()
+    supabase
+      .from('profiles')
+      .select('id, full_name')
+      .then(({ data }) => setPeople(Object.fromEntries((data ?? []).map((p) => [p.id, p.full_name]))))
+  }, [load])
+
+  const categories = [...new Set((items ?? []).map((p) => p.category))]
+  const current = open?.id ? items?.find((p) => p.id === open.id) : null
+  return (
+    <>
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-prose text-sm text-smoke">Plans with a length (e.g. Monthly, 30 days) ask for the member code when sold, and add the days to that member. Leave the length blank for walk-ins and other services.</p>
+        <button type="button" onClick={() => (setFlash(null), setOpen({ create: true }))} className="press flex h-11 items-center gap-2 rounded-lg bg-gold px-4 font-semibold text-ink">
+          <Plus className="size-4" aria-hidden="true" /> Add plan
+        </button>
+      </div>
+      {flash && <div className="mt-4"><Notice>{flash}</Notice></div>}
+      {error && <div className="mt-4"><Problem>Couldn't load plans. {error}</Problem></div>}
+      {!items && !error && (
+        <div role="status" aria-label="Loading plans" className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {[0, 1, 2, 3].map((k) => <div key={k} className="skeleton h-36 rounded-xl bg-paper" />)}
+        </div>
+      )}
+      {items?.length === 0 && <p className="mt-16 text-center text-smoke">No plans yet. Add Monthly (30 days) to start selling memberships.</p>}
+      {items?.length > 0 && (
+        <ul className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {items.map((p) => (
+            <li key={p.id}>
+              <button type="button" onClick={() => (setFlash(null), setOpen({ id: p.id }))} className={`press flex h-full min-h-36 w-full flex-col rounded-xl bg-paper p-4 text-left ring-1 ring-ink/8 transition-shadow duration-150 hover:ring-ink/25 ${p.is_active ? '' : 'opacity-60'}`}>
+                <span className="font-semibold leading-snug">{p.name}</span>
+                <span className="mt-0.5 text-xs text-smoke">
+                  {p.code} · {p.category}
+                  {!p.is_active && (
+                    <span className="ml-2 inline-flex items-center gap-1 font-semibold">
+                      <EyeOff className="size-3" aria-hidden="true" /> Hidden
+                    </span>
+                  )}
+                </span>
+                <span className="tabular mt-auto pt-3 font-display text-3xl font-black leading-none">{money(p.selling_price)}</span>
+                <span className={`mt-1.5 text-xs font-semibold ${p.duration_days ? 'text-[#0B6B35]' : 'text-smoke'}`}>{p.duration_days ? `${p.duration_days} days per member` : 'Not tracked per member'}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <AnimatePresence>
+        {open && (open.create || current) && (
+          <Drawer
+            key="plan"
+            kind="service"
+            tab="details"
+            product={current}
+            categories={categories}
+            people={people}
+            onClose={() => setOpen(null)}
+            onSaved={async (id) => {
+              await load()
+              if (id) setOpen({ id })
+            }}
+            onDeleted={(msg) => (setOpen(null), setFlash(msg), load())}
+          />
+        )}
+      </AnimatePresence>
+    </>
   )
 }
 
@@ -155,16 +267,20 @@ function MemberSheet({ member, onClose, onSaved, onSell }) {
     if (!c.full_name) return setErr('Enter their name.')
     setBusy(sell ? 'sell' : 'save')
     setErr(null)
-    const res = create ? await supabase.from('members').insert(c).select('id').single() : await supabase.from('members').update(c).eq('id', member.id)
+    const res = create ? await supabase.from('members').insert(c).select('id, member_no').single() : await supabase.from('members').update(c).eq('id', member.id)
     setBusy(null)
     if (res.error) return setErr(missingPatch(res.error))
-    if (sell) onSell({ ...member, ...c, id: create ? res.data.id : member.id })
-    else onSaved(create ? `${c.full_name} registered. Sell their plan on the register when they pay.` : `Saved ${c.full_name}.`)
+    if (sell) onSell({ ...member, ...c, ...(create && res.data) })
+    else onSaved(create ? `${c.full_name} registered as ${memberCode(res.data.member_no)}. Give them this code; they'll use it to pay and renew.` : `Saved ${c.full_name}.`)
   }
 
   const [text, tone] = member ? standing(member) : []
   return (
-    <Sheet title={create ? 'Register member' : member.full_name} subtitle={create ? 'Their details. The plan is paid for on the register.' : <StatusPill tone={tone}>{text}</StatusPill>} onClose={onClose}>
+    <Sheet
+      title={create ? 'Register member' : member.full_name}
+      subtitle={create ? 'Their details. The plan is paid for on the register.' : <>{member.member_no && <b className="tabular mr-2 text-gold">{memberCode(member.member_no)}</b>}<StatusPill tone={tone}>{text}</StatusPill></>}
+      onClose={onClose}
+    >
       <form onSubmit={(e) => (e.preventDefault(), save(false))} className="space-y-4">
         <label className={label}>
           Full name

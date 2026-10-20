@@ -95,7 +95,8 @@ create trigger sales_void_member_periods
 
 -- Each member with their latest plan and status (Manila dates).
 -- 'new' = registered but no plan bought yet.
-create or replace view public.v_members with (security_invoker = true) as
+drop view if exists public.v_members; -- recreated whole, so patches can re-run in any order
+create view public.v_members with (security_invoker = true) as
 select
   m.id, m.full_name, m.phone, m.notes, m.created_at,
   cur.plan_name,
