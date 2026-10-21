@@ -67,7 +67,7 @@ assert.deepEqual([ch.old_value, ch.new_value, ch.changed_by], ['50.00', '55.00',
 await fails(S, `update products set stock_qty = 999 where id = $1`, /permission denied/, [gid]); ok('stock_qty cannot be edited directly')
 await fails(S, `insert into products (code, name, selling_price, stock_qty) values ('T1','x',1,50)`, /permission denied/); ok('new product cannot start with made-up stock')
 await as(S, `insert into products (code, name, category, kind, selling_price) values ('MEM-M','Monthly','Membership','service',1200)`)
-assert.equal((await one(`select count(*)::int c from product_changes where field='created'`)).c, 1); ok('staff adds a membership product, creation logged')
+assert.equal((await one(`select count(*)::int c from product_changes where field='created' and changed_by = '${S}'`)).c, 1); ok('staff adds a membership product, creation logged')
 
 assert.equal((await as(S, `select set_stock_count($1, 20) as d`, [gid]))[0].d, -2)
 assert.equal((await one(`select stock_qty from products where id='${gid}'`)).stock_qty, 20); ok('stock count 20 records a −2 adjustment')
@@ -235,6 +235,21 @@ await fails(T, `update members set member_no = 99 where id = $1`, /permission de
 await as(T, `update products set student_price = 900 where id = $1`, [mid])
 assert.equal((await one(`select new_value from product_changes where product_id = '${mid}' and field = 'student_price'`)).new_value, '900.00'); ok('staff set a student price, logged in history')
 await fails(T, `update products set student_price = 5000 where id = $1`, /student_price_max/, [mid]); ok('student price cannot be above the normal price')
+// 013: gym rates.
+const rate = async (code) => (await one(`select id from products where code = '${code}'`)).id
+assert.equal((await one(`select count(*)::int c from products where code in ('MEMBERSHIP','DAY','DAY-M','MONTH','M3','M6','Y1','PROMO-3+1','PROMO-5+2','PT15')`)).c, 10); ok('price list added once, even with the patch run twice')
+const [annual, dayM] = [await rate('MEMBERSHIP'), await rate('DAY-M')]
+const sell13 = (items, m) => as(T, `select record_sale($1::jsonb, 'cash', 0, null, null, null, null, null, null, $2) as id`, [JSON.stringify(items), m])
+await fails(T, `select record_sale($1::jsonb)`, /annual membership/, [JSON.stringify([{ product_id: dayM, qty: 1 }])]); ok('member day pass needs a member')
+await assert.rejects(sell13([{ product_id: dayM, qty: 1 }], mem), /annual membership/); ok('gym time alone does not get the member rate')
+await sell13([{ product_id: dayM, qty: 1 }, { product_id: annual, qty: 1 }], mem); ok('membership and member day pass in the same sale')
+vm = (await as(T, `select ends_on::text as ends_on, member_until::text as mu from v_members where id = $1`, [mem]))[0]
+assert.deepEqual([vm.ends_on, vm.mu], [await dayOf(29), await dayOf(364)]); ok('membership runs a year and leaves gym time alone')
+await sell13([{ product_id: await rate('MONTH'), qty: 1 }], mem)
+vm = (await as(T, `select ends_on::text as ends_on, member_until::text as mu from v_members where id = $1`, [mem]))[0]
+assert.deepEqual([vm.ends_on, vm.mu], [await dayOf(59), await dayOf(364)]); ok('monthly extends gym time only')
+await sell13([{ product_id: annual, qty: 1 }], mem)
+assert.equal((await as(T, `select member_until::text as mu from v_members where id = $1`, [mem]))[0].mu, await dayOf(729)); ok('early membership renewal adds a year from the end')
 // 010: sales export.
 await fails(S, `select sales_export(current_date, current_date)`, /Only an admin/); ok('staff cannot export sales')
 const p9 = (await one(`select id from products where code = 'CFH09'`)).id

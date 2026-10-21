@@ -96,7 +96,7 @@ export default function Register() {
   const qtyIn = (id) => cart.find((l) => l.id === id)?.qty ?? 0
   const count = lines.reduce((n, l) => n + l.qty, 0)
   const subtotal = round2(lines.reduce((s, l) => s + l.qty * l.selling_price, 0))
-  // Student button: each line with a student price is charged that price instead (taken off as a discount).
+  // Student/Senior/PWD button: each line with a student price is charged that price instead (taken off as a discount).
   const studentOff = round2(lines.reduce((s, l) => s + (l.student_price == null ? 0 : l.qty * (l.selling_price - l.student_price)), 0))
   const studentOn = student && studentOff > 0
   const disc = round2((Number(discount) || 0) + (studentOn ? studentOff : 0))
@@ -106,7 +106,7 @@ export default function Register() {
   const paid = method === 'cash' ? (tendered === '' ? total : Number(tendered)) : null
   const change = paid == null ? null : round2(paid - total)
   const refMissing = method === 'gcash' && !/^\d{4}$/.test(gcashRef)
-  const plans = lines.filter((l) => l.duration_days)
+  const plans = lines.filter((l) => l.duration_days || l.members_only) // lines that need a member
   const planCat = products?.find((p) => p.duration_days)?.category // null until a plan has a length
   const hasPlans = Boolean(planCat)
   // Arriving from Members › Renew: open on the plans.
@@ -156,7 +156,7 @@ export default function Register() {
       p_items: lines.map((l) => ({ product_id: l.id, qty: l.qty })),
       p_payment_method: method,
       p_discount: disc,
-      p_note: studentOn ? 'Student discount' : null,
+      p_note: studentOn ? 'Student/Senior/PWD discount' : null,
       p_amount_tendered: paid,
       p_customer_name: customer.trim() || null,
       p_client_ref: clientRef.current,
@@ -452,7 +452,7 @@ function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setT
             <div className="flex flex-wrap gap-1.5">
               {studentOff > 0 && (
                 <button type="button" onClick={() => setStudent(!studentOn)} aria-pressed={studentOn} className={`${chip} ${studentOn ? 'bg-gold text-ink ring-gold hover:text-ink' : ''}`}>
-                  <GraduationCap className="size-3.5" aria-hidden="true" /> Student
+                  <GraduationCap className="size-3.5" aria-hidden="true" /> Student/Senior/PWD
                 </button>
               )}
               {!showDiscount && (
@@ -493,7 +493,7 @@ function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setT
           )}
           {studentOn && (
             <div className="flex justify-between text-ash">
-              <span>Student discount</span>
+              <span>Student/Senior/PWD discount</span>
               <span className="tabular text-paper">−{money(studentOff)}</span>
             </div>
           )}
@@ -576,7 +576,7 @@ function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setT
   )
 }
 
-const MEMBER_COLS = 'id, member_no, full_name, phone, ends_on'
+const MEMBER_COLS = 'id, member_no, full_name, phone, ends_on, member_until'
 const findMember = async (no) => (await supabase.from('v_members').select(MEMBER_COLS).eq('member_no', no).maybeSingle()).data
 
 // Who a membership plan is for. Their new end date shows before charging, so staff can tell them.
@@ -598,8 +598,14 @@ function MemberPick({ member, setMember, plans, hasPlans, onCancel }) {
 
   if (member) {
     const today = manilaToday()
-    const days = plans.reduce((s, l) => s + l.duration_days * l.qty, 0)
-    const start = member.ends_on && member.ends_on >= today ? addDays(member.ends_on, 1) : today
+    // Gym time and the annual membership run separately (patch 013).
+    const until = (end, ls) => {
+      const days = ls.reduce((s, l) => s + (l.duration_days ?? 0) * l.qty, 0)
+      return days ? addDays(end && end >= today ? addDays(end, 1) : today, days - 1) : null
+    }
+    const paidTo = until(member.ends_on, plans.filter((l) => !l.is_membership))
+    const memberTo = until(member.member_until, plans.filter((l) => l.is_membership)) ?? member.member_until
+    const long = { month: 'short', day: 'numeric', year: 'numeric' }
     return (
       <div className="flex items-center gap-2 rounded-lg bg-ink-2 px-3 py-2 ring-1 ring-paper/10">
         <IdCard className="size-4 shrink-0 text-gold" aria-hidden="true" />
@@ -608,9 +614,11 @@ function MemberPick({ member, setMember, plans, hasPlans, onCancel }) {
             {member.full_name} {member.member_no && <span className="tabular text-xs text-gold">{memberCode(member.member_no)}</span>}
           </span>
           <span className="block text-xs text-ash">
-            {days ? `Paid until ${fmtDay(addDays(start, days - 1), { month: 'short', day: 'numeric', year: 'numeric' })}` : member.ends_on ? `${member.ends_on >= today ? 'Active until' : 'Expired'} ${fmtDay(member.ends_on)} · add their plan` : 'No plan yet · add their plan'}
+            {paidTo ? `Gym paid until ${fmtDay(paidTo, long)}` : member.ends_on ? `Gym ${member.ends_on >= today ? 'active until' : 'expired'} ${fmtDay(member.ends_on)}` : 'No gym plan yet'}
+            {' · '}
+            {memberTo && memberTo >= today ? `Member until ${fmtDay(memberTo, long)}` : <span className="text-[#FFD36B]">Annual membership not paid</span>}
           </span>
-          {!days && !hasPlans && (
+          {!plans.length && !hasPlans && (
             <span className="mt-1 block text-xs text-[#FFD36B]">No membership plans yet. Add one in Members › Plans (e.g. Monthly, 30 days).</span>
           )}
         </p>

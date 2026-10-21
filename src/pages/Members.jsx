@@ -11,7 +11,7 @@ import { Notice, Problem, StatusPill, Submit, field, label } from '../components
 import { Drawer } from './Inventory.jsx'
 
 const daysLeft = (end) => Math.round((Date.parse(end) - Date.parse(manilaToday())) / 864e5)
-const missingPatch = (e) => (/schema cache|does not exist/i.test(e.message) ? 'The database is missing an update. In Supabase › SQL Editor, run supabase/009_members.sql and 011_member_codes.sql, then refresh this page.' : e.message)
+const missingPatch = (e) => (/schema cache|does not exist/i.test(e.message) ? 'The database is missing an update. In Supabase › SQL Editor, run supabase/009_members.sql, 011_member_codes.sql and 013_gym_rates.sql, then refresh this page.' : e.message)
 
 // Words first, colour second.
 export function standing(m) {
@@ -23,7 +23,7 @@ export function standing(m) {
 }
 
 // Renewing and first plans are sold on the register, so payment, receipt and reports stay in one place.
-const toRegister = (navigate, m) => navigate('/', { state: { member: { id: m.id, member_no: m.member_no, full_name: m.full_name, ends_on: m.ends_on ?? null } } })
+const toRegister = (navigate, m) => navigate('/', { state: { member: { id: m.id, member_no: m.member_no, full_name: m.full_name, ends_on: m.ends_on ?? null, member_until: m.member_until ?? null } } })
 
 const TABS = [
   ['Members', '/members'],
@@ -132,7 +132,7 @@ function MemberList() {
                   <span className="block truncate font-semibold">
                     {m.full_name} {m.member_no && <span className="tabular ml-1 rounded bg-ink px-1.5 py-0.5 text-xs font-bold text-gold">{memberCode(m.member_no)}</span>}
                   </span>
-                  <span className="block truncate text-sm text-smoke">{[m.plan_name, m.phone].filter(Boolean).join(' · ') || 'No details'}</span>
+                  <span className="block truncate text-sm text-smoke">{[m.member_until >= manilaToday() ? `Member until ${fmtDay(m.member_until)}` : 'Annual membership not paid', m.plan_name, m.phone].filter(Boolean).join(' · ')}</span>
                 </button>
                 <StatusPill tone={tone}>{text}</StatusPill>
                 <button type="button" onClick={() => toRegister(navigate, m)} className="press flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold ring-1 ring-ink/15">
@@ -216,8 +216,8 @@ function Plans() {
                   )}
                 </span>
                 <span className="tabular mt-auto pt-3 font-display text-3xl font-black leading-none">{money(p.selling_price)}</span>
-                <span className={`mt-1.5 text-xs font-semibold ${p.duration_days ? 'text-[#0B6B35]' : 'text-smoke'}`}>{p.duration_days ? `${p.duration_days} days per member` : 'Not tracked per member'}</span>
-                {p.student_price != null && <span className="tabular mt-0.5 text-xs font-semibold text-[#6B4E00]">Student {money(p.student_price)}</span>}
+                <span className={`mt-1.5 text-xs font-semibold ${p.duration_days ? 'text-[#0B6B35]' : 'text-smoke'}`}>{p.is_membership ? `Annual membership · ${p.duration_days} days` : p.members_only ? 'Members only' : p.duration_days ? `${p.duration_days} days gym time` : 'Not tracked per member'}</span>
+                {p.student_price != null && <span className="tabular mt-0.5 text-xs font-semibold text-[#6B4E00]">Student/Senior/PWD {money(p.student_price)}</span>}
               </button>
             </li>
           ))}

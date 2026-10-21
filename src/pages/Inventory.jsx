@@ -559,13 +559,13 @@ function DetailsTab({ product, kind, categories, onDone, onDeleted }) {
       )}
       {f.kind === 'service' && (
         <label className={label}>
-          Student price
+          Student/Senior/PWD price
           <span className="relative mt-1.5 block w-40">
             <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-smoke">₱</span>
             <input inputMode="decimal" value={f.student_price} onChange={moneyInput(set('student_price'))} placeholder="None" className={`${field} tabular pl-7 text-lg`} />
           </span>
           <span className="mt-1.5 block text-sm font-normal text-smoke">
-            {student != null && student < price ? `Students save ${money(price - student)}. ` : ''}On the register, the Student button charges this price instead. Leave blank if there's no student rate.
+            {student != null && student < price ? `They save ${money(price - student)}. ` : ''}On the register, the Student/Senior/PWD button charges this price instead. Leave blank if there's no discounted rate.
           </span>
         </label>
       )}
@@ -638,7 +638,7 @@ function DeleteProduct({ product, onDeleted }) {
   )
 }
 
-const FIELD_LABEL = { name: 'Name', code: 'Code', category: 'Category', kind: 'Type', selling_price: 'Price', unit_cost: 'Cost', reorder_level: 'Reorder level', is_active: 'Register', duration_days: 'Membership length', student_price: 'Student price' }
+const FIELD_LABEL = { name: 'Name', code: 'Code', category: 'Category', kind: 'Type', selling_price: 'Price', unit_cost: 'Cost', reorder_level: 'Reorder level', is_active: 'Register', duration_days: 'Membership length', student_price: 'Student/Senior/PWD price', is_membership: 'Annual membership', members_only: 'Members only' }
 const fmtVal = (field, v) =>
   v == null ? '–' : field === 'selling_price' || field === 'unit_cost' || field === 'student_price' ? money(v) : field === 'is_active' ? (v === 'true' ? 'shown' : 'hidden') : field === 'kind' ? (v === 'good' ? 'item' : 'service') : field === 'duration_days' ? `${v} days` : v
 

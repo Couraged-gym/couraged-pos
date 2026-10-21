@@ -20,7 +20,7 @@ New Vercel project from this repo; add `VITE_SUPABASE_URL` and `VITE_SUPABASE_AN
 
 ## Memberships
 
-Membership plans and other services (no stock) live in **Members › Plans**, not Inventory. Give a plan a length in days (Monthly = 30, Annual = 365) to track it per member; leave it blank for walk-ins and other services. A plan can also have a **student price**: on the register, the Student button charges that instead (recorded as a discount, with the sale noted "Student discount"). Each plan shows as a card on the register. The Memberships analytics tab reads the `Membership` category.
+Membership plans and other services (no stock) live in **Members › Plans**, not Inventory. Give a plan a length in days (Monthly = 30) to track it per member; leave it blank for walk-ins and other services. The **Annual Membership** (yearly insurance) is tracked apart from gym time, and **Day Pass (Member)** only sells to someone whose annual membership is current (patch 013 adds the full price list). A plan can also have a **Student/Senior/PWD price**: on the register, that button charges it instead (recorded as a discount, with the sale noted "Student/Senior/PWD discount"). Each plan shows as a card on the register. The Memberships analytics tab reads the `Membership` category.
 
 Register people in **Members**; each gets a member code like **M0012**. To sell or renew, add the plan card on the register and enter their code (or name) when the cart asks who it's for, or type the code in the register search and press Enter. The days are added after their current end date, or from today if they've lapsed; voiding the sale takes them back off. Members shows Active / Expired / All with a search by name, code or phone.
 
