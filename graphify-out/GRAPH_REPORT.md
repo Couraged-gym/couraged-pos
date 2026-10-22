@@ -1,45 +1,46 @@
-# Graph Report - couraged-pos  (2026-10-20)
+# Graph Report - couraged-pos  (2026-10-22)
 
 ## Corpus Check
-- 54 files · ~63,455 words
+- 63 files · ~74,392 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 5 file(s) not represented in the graph (top: (none) 2, .example 1, .bat 1)
 
 ## Summary
-- 400 nodes · 1080 edges · 18 communities (17 shown, 1 thin omitted)
-- Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 21 edges (avg confidence: 0.87)
-- Token cost: 0 input · 0 output
+- 485 nodes · 1337 edges · 19 communities (18 shown, 1 thin omitted)
+- Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 22 edges (avg confidence: 0.86)
+- Token cost: 74,043 input · 0 output
 
 ## Community Hubs (Navigation)
-- Staff API & App Shell
-- Reports & Date Ranges
-- Shared UI & Forms
-- Expenses & Money Utils
-- App Routing & Navigation
-- Receipt Printing
-- PDF Generation
+- Sales Excel Export
+- Shared Utils & Inventory
+- App Shell & Navigation
+- PDF Reports & Analytics
+- UI & Form Components
+- Staff API & Supabase
+- Product Docs & Modules
 - Payroll Computation
-- Inventory Management
+- Receipt Printing
+- PDF Rendering Helpers
+- Expenses Module
 - Package Manifest
 - Runtime Dependencies
-- Staff Management
-- NPM Scripts
+- NPM Scripts & Tests
 - Dev Dependencies
-- PWA Icons & Logo
-- App Entry Point
+- PWA Icons & Branding
+- Entry Point & Fonts
 - Vercel Config
 
 ## God Nodes (most connected - your core abstractions)
-1. `money()` - 47 edges
-2. `Sheet()` - 20 edges
-3. `PayRun()` - 20 edges
-4. `useAuth()` - 18 edges
-5. `motion` - 17 edges
-6. `react` - 17 edges
-7. `fmtDateTime()` - 16 edges
-8. `lucide-react` - 15 edges
-9. `manilaToday()` - 15 edges
-10. `ExpenseSheet()` - 15 edges
+1. `money()` - 51 edges
+2. `Sheet()` - 24 edges
+3. `manilaToday()` - 21 edges
+4. `PayRun()` - 20 edges
+5. `react` - 19 edges
+6. `motion` - 18 edges
+7. `useAuth()` - 18 edges
+8. `addDays()` - 18 edges
+9. `Problem()` - 18 edges
+10. `ExportSheet()` - 18 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `handler()` --calls--> `handleStaff()`  [EXTRACTED]
@@ -57,103 +58,104 @@
 - None detected.
 
 ## Hyperedges (group relationships)
-- **Payroll posts to Expenses, summarized in PDF Reports** — readme_payroll, readme_expenses, readme_reports, readme_ph_contributions [EXTRACTED 1.00]
-- **Staff account management and role enforcement** — readme_staff_page, api_staff, readme_service_role_key, readme_role_model [EXTRACTED 1.00]
 - **CouRageD PWA Icon Set** — public_assets_icon_192_app_icon, public_assets_icon_512_app_icon, public_assets_icon_512_maskable_maskable_icon, public_assets_apple_touch_icon_apple_touch_icon, public_assets_logo_couraged_brand_logo [INFERRED 0.85]
+- **Never-delete audit trail (void with reason)** — readme_sales, readme_expenses, readme_payroll, readme_void_with_reason, readme_inventory [INFERRED 0.85]
+- **Membership sell/renew flow** — readme_register, readme_membership_plans, readme_member_code, readme_membership_renewal, readme_members [EXTRACTED 1.00]
+- **Admin reporting outputs** — readme_analytics, readme_reports_pdf, readme_export_sales [INFERRED 0.85]
 
-## Communities (18 total, 1 thin omitted)
+## Communities (19 total, 1 thin omitted)
 
-### Community 0 - "Staff API & App Shell"
-Cohesion: 0.05
-Nodes (36): handler(), onRequestPost(), index.html app shell, PWA / mobile web-app meta tags, Analytics, Shared brand tokens, CourageD marketing site (../couraged), CourageD POS (+28 more)
+### Community 0 - "Sales Excel Export"
+Cohesion: 0.08
+Nodes (43): xlsx, RangePicker(), BORDER, buildExport(), cnt(), daysOf(), fileName(), itemOf() (+35 more)
 
-### Community 1 - "Reports & Date Ranges"
+### Community 1 - "Shared Utils & Inventory"
 Cohesion: 0.12
-Nodes (46): addDays(), fmtDay(), monthStart(), presets(), RangePicker(), downloadPayslips(), downloadSalesReport(), fetchAll() (+38 more)
+Nodes (46): fmtDay(), CountUp(), Segmented(), stockOf(), manilaToday(), memberCode(), money(), moneyInput() (+38 more)
 
-### Community 2 - "Shared UI & Forms"
-Cohesion: 0.14
-Nodes (42): lucide-react, motion, field, label, MoneyField(), Notice(), Problem(), StatusPill() (+34 more)
+### Community 2 - "App Shell & Navigation"
+Cohesion: 0.10
+Nodes (39): animejs, Analytics, App(), Expenses, Gate(), Main(), Members, NAV (+31 more)
 
-### Community 3 - "Expenses & Money Utils"
+### Community 3 - "PDF Reports & Analytics"
+Cohesion: 0.12
+Nodes (44): addDays(), monthStart(), presets(), downloadPayslips(), downloadSalesReport(), fetchAll(), loadPdf(), logoData() (+36 more)
+
+### Community 4 - "UI & Form Components"
 Cohesion: 0.15
-Nodes (31): CountUp(), EASE_OUT, money(), moneyInput(), quickCash(), round2(), uuid(), BillsSheet() (+23 more)
+Nodes (39): lucide-react, motion, react, field, label, MoneyField(), Notice(), Problem() (+31 more)
 
-### Community 4 - "App Routing & Navigation"
+### Community 5 - "Staff API & Supabase"
+Cohesion: 0.08
+Nodes (23): handler(), onRequestPost(), @electric-sql/pglite, @supabase/supabase-js, fail(), handleStaff(), ROLES, a (+15 more)
+
+### Community 6 - "Product Docs & Modules"
+Cohesion: 0.08
+Nodes (30): index.html app shell, PWA / mobile web-app meta tags, Analytics, Annual Membership, api/staff.js, CourageD Marketing Site, CourageD POS, Day Pass (Member) (+22 more)
+
+### Community 7 - "Payroll Computation"
+Cohesion: 0.11
+Nodes (25): addToPrior(), clamp(), computePayslip(), EMPTY_PRIOR, pagibig(), PERIODS_PER_MONTH, philhealth(), round2() (+17 more)
+
+### Community 8 - "Receipt Printing"
 Cohesion: 0.13
-Nodes (25): animejs, react, Analytics, App(), Expenses, Gate(), Main(), NAV (+17 more)
+Nodes (24): RECEIPT, ascii(), peso(), printReceipt(), receiptBytes(), saleReceipt(), b, lines (+16 more)
 
-### Community 5 - "Receipt Printing"
-Cohesion: 0.13
-Nodes (23): RECEIPT, ascii(), peso(), printReceipt(), receiptBytes(), saleReceipt(), b, lines (+15 more)
-
-### Community 6 - "PDF Generation"
+### Community 9 - "PDF Rendering Helpers"
 Cohesion: 0.15
 Nodes (26): amt(), CRIMSON, day(), footer(), GOLD, header(), INK, LINE (+18 more)
 
-### Community 7 - "Payroll Computation"
-Cohesion: 0.12
-Nodes (22): clamp(), computePayslip(), EMPTY_PRIOR, pagibig(), PERIODS_PER_MONTH, philhealth(), round2(), sss() (+14 more)
+### Community 10 - "Expenses Module"
+Cohesion: 0.24
+Nodes (17): BillsSheet(), CategoriesSheet(), EXP_FIELD, ExpenseHistory(), Expenses(), ExpenseSheet(), fmtDay(), monthBounds() (+9 more)
 
-### Community 8 - "Inventory Management"
-Cohesion: 0.22
-Nodes (19): Segmented(), stockOf(), BLANK, DeleteProduct(), DetailsTab(), Drawer(), FIELD_LABEL, fmtVal() (+11 more)
-
-### Community 9 - "Package Manifest"
+### Community 11 - "Package Manifest"
 Cohesion: 0.16
 Nodes (13): name, private, type, version, jspdf, jspdf-autotable, react-router, recharts (+5 more)
 
-### Community 10 - "Runtime Dependencies"
-Cohesion: 0.15
-Nodes (13): dependencies, animejs, @fontsource/barlow, @fontsource-variable/big-shoulders-display, jspdf, jspdf-autotable, lucide-react, motion (+5 more)
+### Community 12 - "Runtime Dependencies"
+Cohesion: 0.14
+Nodes (14): dependencies, animejs, @fontsource/barlow, @fontsource-variable/big-shoulders-display, jspdf, jspdf-autotable, lucide-react, motion (+6 more)
 
-### Community 11 - "Staff Management"
-Cohesion: 0.40
-Nodes (12): fmtDateTime(), AddSheet(), EditSheet(), Handover(), makePassword(), PasswordField(), Problem(), ROLE (+4 more)
+### Community 13 - "NPM Scripts & Tests"
+Cohesion: 0.17
+Nodes (12): scripts, build, dev, dev:tablet, preview, test, test:api, test:db (+4 more)
 
-### Community 12 - "NPM Scripts"
-Cohesion: 0.18
-Nodes (11): scripts, build, dev, dev:tablet, preview, test, test:api, test:db (+3 more)
-
-### Community 13 - "Dev Dependencies"
+### Community 14 - "Dev Dependencies"
 Cohesion: 0.29
 Nodes (7): devDependencies, @electric-sql/pglite, tailwindcss, @tailwindcss/vite, vite, vite-plugin-pwa, @vitejs/plugin-react
 
-### Community 14 - "PWA Icons & Logo"
+### Community 15 - "PWA Icons & Branding"
 Cohesion: 0.53
 Nodes (6): Apple Touch Icon, PWA Icon 192x192, PWA Icon 512x512, PWA Maskable Icon 512x512, CouRageD Brand Logo, PWA Install Icons
 
-### Community 15 - "App Entry Point"
+### Community 16 - "Entry Point & Fonts"
 Cohesion: 0.40
 Nodes (3): @fontsource/barlow, @fontsource-variable/big-shoulders-display, react-dom
 
-### Community 17 - "Vercel Config"
+### Community 18 - "Vercel Config"
 Cohesion: 0.50
 Nodes (3): framework, outputDirectory, rewrites
 
-## Ambiguous Edges - Review These
-- `CourageD POS` → `Vercel deployment`  [AMBIGUOUS]
-  README.md · relation: references
-
 ## Knowledge Gaps
-- **103 isolated node(s):** `name`, `private`, `version`, `type`, `dev` (+98 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 123 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **128 isolated node(s):** `name`, `private`, `version`, `type`, `dev` (+123 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 152 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **1 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **What is the exact relationship between `CourageD POS` and `Vercel deployment`?**
-  _Edge tagged AMBIGUOUS (relation: references) - confidence is low._
-- **Why does `@supabase/supabase-js` connect `Staff API & App Shell` to `Package Manifest`, `App Routing & Navigation`?**
-  _High betweenness centrality (0.101) - this node is a cross-community bridge._
+- **Why does `index.html app shell` connect `Product Docs & Modules` to `Entry Point & Fonts`?**
+  _High betweenness centrality (0.124) - this node is a cross-community bridge._
 - **What connects `name`, `private`, `version` to the rest of the system?**
-  _103 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Staff API & App Shell` be split into smaller, more focused modules?**
-  _Cohesion score 0.05254901960784314 - nodes in this community are weakly interconnected._
-- **Why does `money()` connect `Expenses & Money Utils` to `Inventory Management`, `Reports & Date Ranges`, `Shared UI & Forms`, `Receipt Printing`?**
-  _High betweenness centrality (0.087) - this node is a cross-community bridge._
-- **Should `Reports & Date Ranges` be split into smaller, more focused modules?**
-  _Cohesion score 0.11564625850340136 - nodes in this community are weakly interconnected._
-- **Why does `react` connect `App Routing & Navigation` to `Reports & Date Ranges`, `Shared UI & Forms`, `Expenses & Money Utils`, `Receipt Printing`, `Inventory Management`, `Package Manifest`, `Staff Management`, `App Entry Point`?**
-  _High betweenness centrality (0.074) - this node is a cross-community bridge._
+  _128 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `Sales Excel Export` be split into smaller, more focused modules?**
+  _Cohesion score 0.08163265306122448 - nodes in this community are weakly interconnected._
+- **Why does `react` connect `UI & Form Components` to `Sales Excel Export`, `Shared Utils & Inventory`, `App Shell & Navigation`, `PDF Reports & Analytics`, `Receipt Printing`, `Expenses Module`, `Package Manifest`, `Entry Point & Fonts`?**
+  _High betweenness centrality (0.118) - this node is a cross-community bridge._
+- **Should `Shared Utils & Inventory` be split into smaller, more focused modules?**
+  _Cohesion score 0.11673469387755102 - nodes in this community are weakly interconnected._
+- **Should `App Shell & Navigation` be split into smaller, more focused modules?**
+  _Cohesion score 0.0975177304964539 - nodes in this community are weakly interconnected._
+- **Should `PDF Reports & Analytics` be split into smaller, more focused modules?**
+  _Cohesion score 0.11655874190564293 - nodes in this community are weakly interconnected._
