@@ -67,6 +67,7 @@ export function computePayslip(inp, emp, rates, prior = EMPTY_PRIOR) {
   const allowT = n(inp.allowances_taxable)
   const allowN = n(inp.allowances_nontaxable)
   const other = n(inp.other_deductions)
+  const adv = n(inp.cash_advance) // cash advance repayment: owed money, so it isn't taxed or contributed on
   const comp = round2(basic + ot + allowT) // compensation subject to contributions and tax
   const gross = round2(comp + allowN)
 
@@ -84,7 +85,7 @@ export function computePayslip(inp, emp, rates, prior = EMPTY_PRIOR) {
   }
   const taxable = Math.max(0, round2(comp - s.ee - ph.ee - pi.ee))
   const tax = emp.minimum_wage_earner ? 0 : Math.max(0, round2(withholding(prior.taxable + taxable, rates.tax) - prior.withholding_tax))
-  const net = round2(gross - s.ee - ph.ee - pi.ee - tax - other)
+  const net = round2(gross - s.ee - ph.ee - pi.ee - tax - other - adv)
 
   return {
     basic_pay: basic,
@@ -92,6 +93,7 @@ export function computePayslip(inp, emp, rates, prior = EMPTY_PRIOR) {
     allowances_taxable: allowT,
     allowances_nontaxable: allowN,
     other_deductions: other,
+    cash_advance: adv,
     gross_pay: gross,
     sss_ee: s.ee,
     sss_er: s.er,

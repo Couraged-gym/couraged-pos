@@ -6,7 +6,7 @@ import { money } from '../lib/util.js'
 import { EASE_OUT, Sheet, fmtDateTime } from '../components/ui.jsx'
 import RangePicker, { addDays, presets } from '../components/RangePicker.jsx'
 import { useAuth } from '../auth.jsx'
-import { printReceipt, saleReceipt, testReceipt } from '../lib/printReceipt.js'
+import { daySummaryBytes, printBytes, printReceipt, saleReceipt, testReceipt } from '../lib/printReceipt.js'
 
 const PAGE = 50
 const METHOD = { cash: 'Cash', gcash: 'GCash', maya: 'Maya', card: 'Card', bank_transfer: 'Bank transfer', other: 'Other' }
@@ -15,7 +15,7 @@ const dayStart = (d) => `${d}T00:00:00+08:00` // Manila midnight
 const select = 'h-11 rounded-lg bg-paper px-3 text-sm font-semibold ring-1 ring-ink/10 outline-none focus:ring-2 focus:ring-gold'
 
 export default function Sales() {
-  const { isAdmin } = useAuth() // staff only see their own receipts (sales read policy)
+  const { isAdmin, profile } = useAuth() // staff only see their own receipts (sales read policy)
   const opts = useMemo(presets, [])
   const [range, setRange] = useState({ key: 'today', from: opts[0][2], to: opts[0][3] })
   const [typed, setTyped] = useState('')
@@ -30,6 +30,7 @@ export default function Sales() {
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const [openId, setOpenId] = useState(null)
+  const [printing, setPrinting] = useState(false)
   const req = useRef(0)
 
   useEffect(() => {
@@ -103,6 +104,15 @@ export default function Sales() {
     setRows((r) => [...r, ...data])
   }
 
+  // X-reading of the day picked: all sales, whoever rang them up.
+  const printDay = async () => {
+    setPrinting(true)
+    const { data, error } = await supabase.rpc('day_summary', { p_date: range.from })
+    setPrinting(false)
+    if (error) return alert(`Couldn't get the day's totals: ${error.message}`)
+    printBytes(daySummaryBytes(data, { printedBy: profile?.full_name, methods: METHOD }))
+  }
+
   const names = Object.fromEntries(people.map((p) => [p.id, p.full_name]))
   const open = rows?.find((r) => r.id === openId)
   const pay = (keys) => (summary?.payments ?? []).filter((p) => keys.includes(p.method)).reduce((s, p) => s + Number(p.total), 0)
@@ -119,6 +129,11 @@ export default function Sales() {
           <button type="button" onClick={() => printReceipt(testReceipt())} className="press flex h-11 items-center gap-2 rounded-lg px-4 font-semibold ring-1 ring-ink/15">
             <Printer className="size-4" aria-hidden="true" /> Print test receipt
           </button>
+          {range.from === range.to && (
+            <button type="button" onClick={printDay} disabled={printing} title="Totals for the whole day, every staff member. Internal, not an official receipt." className="press flex h-11 items-center gap-2 rounded-lg bg-ink px-4 font-semibold text-paper disabled:opacity-60">
+              {printing ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Printer className="size-4" aria-hidden="true" />} Print day summary
+            </button>
+          )}
           <RangePicker opts={opts} range={range} setRange={setRange} />
         </div>
       </header>

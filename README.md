@@ -5,7 +5,7 @@ Separate app and Vercel project from the marketing site (`../couraged`); same br
 
 ## Setup
 
-1. Supabase › SQL Editor: run `supabase/schema.sql` (already done), then every numbered patch in `supabase/` in order (`001_…` to `012_…`). Each patch is safe to run again.
+1. Supabase › SQL Editor: run `supabase/schema.sql` (already done), then every numbered patch in `supabase/` in order (`001_…` to `014_…`). Each patch is safe to run again.
 2. Supabase › Authentication › Sign In / Providers: turn **off** "Allow new users to sign up". Create staff accounts yourself under Authentication › Users › Add user. New accounts start `inactive`; give them a role:
    ```sql
    update public.profiles set role = 'staff' where id = (select id from auth.users where email = 'staff@example.com');
@@ -29,12 +29,12 @@ Register people in **Members**; each gets a member code like **M0012**. To sell 
 - **Register** (staff + admin): checkout, cash change, receipt.
 - **Inventory** (staff + admin): stock items only. Receive deliveries, count shelves, write off spoilage, add and edit products and prices (admins can also delete). Stock only changes through these actions, and every change is in the product's History with who made it.
 - **Members** (staff + admin): register members (each gets a code like M0012), see who is active or expired, and manage plans and services under Plans.
-- **Sales** (admin only): every receipt with filters, cash-in-drawer totals, and voiding with a reason.
+- **Sales** (admin only): every receipt with filters, cash-in-drawer totals, and voiding with a reason. **Print day summary** (pick a single day) prints an X-reading on the receipt printer for every sale that day: gross, discounts, net, voids, payments, categories and expected cash. It resets nothing and says it is not an official receipt; it is not a BIR Z-reading.
 - **Staff** (admin only): add logins with a temporary password, change access (admin, staff, inactive), set a new password. There is always at least one admin.
 - **Expenses** (admin only): one-off expenses and a monthly-bills checklist (rent, electricity, water…), with optional receipt photos/PDFs in a private storage bucket. Never deleted: voided with a reason, and every edit is logged.
-- **Payroll** (admin only): employees (own pay schedule, monthly/daily/hourly rate, government numbers), pay runs from draft to finalized, SSS + PhilHealth + Pag-IBIG + BIR withholding settled month-to-date, editable rate tables with effective dates (pre-filled with 2025 rates; have the accountant confirm). Finalizing posts salaries and employer contributions to Expenses; voiding a run voids them.
+- **Payroll** (admin only): employees (own pay schedule, monthly/daily/hourly rate, government numbers), pay runs from draft to finalized, SSS + PhilHealth + Pag-IBIG + BIR withholding settled month-to-date, editable rate tables with effective dates (pre-filled with 2025 rates; have the accountant confirm). Finalizing posts salaries and employer contributions to Expenses; voiding a run voids them. **Cash advances** (one open per employee, signed authorization required, no interest) are repaid by a deduction filled in on each pay run; they are a receivable, not an expense. Payslips can be downloaded, printed on a normal printer (Print payslips), or printed one at a time on the receipt printer.
 - **Reports** (admin only): Analytics > Download PDF gives a sales & profit report for this/last week, this/last month or the dates on screen (P&L vs previous period, breakdowns, payroll, every expense with OR numbers, signature lines). Each pay run has a payslips PDF (summary, remittance table, one payslip per person); drafts are stamped DRAFT.
-- **Analytics** (admin only): General, Merchandise, Memberships and Staff tabs for any date range.
+- **Analytics** (admin only): General, Merchandise, Memberships and Staff tabs for any date range. Gross profit counts goods at their cost when sold. Inventory purchases (Receive) are shown as cash spent but not subtracted; stock losses (spoilage and count shortages, at cost) are taken off net profit.
 - **Export sales** (admin only, Analytics > Export sales): the payment sheet (SOLD ITEMS / SERVICES with GCash, Cash and Total) as CSV or Excel. Daily (a tab per day plus Summary), Summary (grouped by product) or a transaction log. Uses the price and cost at the time of each sale; voided sales are listed separately and left out of the totals; totals are after discounts, so they match Analytics. Excel is written with SheetJS (installed from cdn.sheetjs.com, not npm), and the bold headers, yellow subtotal rows and frozen header row are added to the file afterwards, since the free SheetJS edition doesn't write styles.
 
 ## Tests

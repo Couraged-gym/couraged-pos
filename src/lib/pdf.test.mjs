@@ -24,8 +24,10 @@ const r = {
 const doc = salesReportPdf({ r, label: 'October 2026', expenses: [{ expense_date: '2026-10-05', description: 'Rent', category: 'Rent', amount: 650, payment_method: 'cash' }] })
 assert.ok(doc.getNumberOfPages() >= 1)
 assert.ok(doc.output('arraybuffer').byteLength > 5000); ok('sales report builds (net loss, en dash and accented names are safe)')
+const withStock = salesReportPdf({ r, stock: { purchases: 1043.04, losses: 39, previous_losses: 0, daily: [] }, label: 'October 2026' })
+assert.ok(withStock.output('arraybuffer').byteLength > 5000); ok('sales report builds with stock losses and inventory purchases')
 
-const items = [{ employee_id: 'a', employee_name: 'Coach Karl', pay_basis: 'monthly', rate: 20000, basic_pay: 10000, overtime_pay: 0, allowances_taxable: 0, allowances_nontaxable: 0, other_deductions: 0, gross_pay: 10000, sss_ee: 500, sss_er: 1000, sss_ec: 10, philhealth_ee: 250, philhealth_er: 250, pagibig_ee: 200, pagibig_er: 200, taxable_income: 9050, withholding_tax: 0, net_pay: 9050 }]
+const items = [{ employee_id: 'a', employee_name: 'Coach Karl', pay_basis: 'monthly', rate: 20000, basic_pay: 10000, overtime_pay: 0, allowances_taxable: 0, allowances_nontaxable: 0, cash_advance: 500, advance_balance: 1500, other_deductions: 0, gross_pay: 10000, sss_ee: 500, sss_er: 1000, sss_ec: 10, philhealth_ee: 250, philhealth_er: 250, pagibig_ee: 200, pagibig_er: 200, taxable_income: 9050, withholding_tax: 0, net_pay: 8550 }]
 const slips = payslipsPdf({ run: { period_start: '2026-10-01', period_end: '2026-10-15', pay_date: '2026-10-15', status: 'draft' }, items })
 assert.equal(slips.getNumberOfPages(), 2); ok('payslips: a summary page plus one page per employee')
 console.log('all passed')

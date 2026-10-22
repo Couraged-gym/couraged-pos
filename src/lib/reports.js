@@ -46,10 +46,11 @@ export function reportPeriods(custom) {
 }
 
 export async function downloadSalesReport({ from, to, label, by }) {
-  const [{ salesReportPdf }, logo, rep, expenses, payroll] = await Promise.all([
+  const [{ salesReportPdf }, logo, rep, stock, expenses, payroll] = await Promise.all([
     loadPdf(),
     logoData().catch(() => null),
     supabase.rpc('sales_report', { p_from: from, p_to: to }),
+    supabase.rpc('stock_report', { p_from: from, p_to: to }), // before patch 014 this errors; the report leaves stock out
     fetchAll(() =>
       supabase
         .from('expenses')
@@ -65,6 +66,7 @@ export async function downloadSalesReport({ from, to, label, by }) {
   if (rep.error) throw rep.error
   const doc = salesReportPdf({
     r: rep.data,
+    stock: stock.error ? null : stock.data,
     label,
     expenses: expenses.map((e) => ({ ...e, category: e.expense_categories?.name ?? '' })),
     payroll: payroll.error ? [] : payroll.data,
@@ -74,8 +76,19 @@ export async function downloadSalesReport({ from, to, label, by }) {
   doc.save(`CourageD-report_${from}_to_${to}.pdf`)
 }
 
-export async function downloadPayslips({ run, items, employees, by }) {
-  const [{ payslipsPdf }, logo] = await Promise.all([loadPdf(), logoData().catch(() => null)])
-  const doc = payslipsPdf({ run, items, employees, logo, by })
-  doc.save(`CourageD-payroll_${run.period_start}_to_${run.period_end}${run.status === 'finalized' ? '' : '_DRAFT'}.pdf`)
+// print: open the PDF with the print dialog instead of downloading it.
+export async function downloadPayslips({ run, items, employees, by, print }) {
+  const win = print ? window.open('', '_blank') : null // opened before any await, or the popup blocker stops it
+  let doc
+  try {
+    const [{ payslipsPdf }, logo] = await Promise.all([loadPdf(), logoData().catch(() => null)])
+    doc = payslipsPdf({ run, items, employees, logo, by })
+  } catch (e) {
+    win?.close()
+    throw e
+  }
+  if (win) {
+    doc.autoPrint()
+    win.location.href = doc.output('bloburl')
+  } else doc.save(`CourageD-payroll_${run.period_start}_to_${run.period_end}${run.status === 'finalized' ? '' : '_DRAFT'}.pdf`)
 }

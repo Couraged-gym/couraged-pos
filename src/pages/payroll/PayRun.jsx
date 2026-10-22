@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { AnimatePresence } from 'motion/react'
-import { ArrowLeft, Ban, CircleAlert, Download, Loader2, Plus, Save, Stamp, Trash2, X } from 'lucide-react'
+import { ArrowLeft, Ban, CircleAlert, Download, Loader2, Plus, Printer, Save, Stamp, Trash2, X } from 'lucide-react'
 import { useAuth } from '../../auth.jsx'
 import { downloadPayslips } from '../../lib/reports.js'
+import { payslipBytes, printBytes } from '../../lib/printReceipt.js'
 import { supabase } from '../../lib/supabase.js'
 import { money } from '../../lib/util.js'
 import { EMPTY_PRIOR, addToPrior, computePayslip, ratesOn, suggestedBasic } from '../../lib/payroll.js'
@@ -12,7 +13,8 @@ import { Notice, Problem, StatusPill, Submit, field } from '../../components/for
 import { addDays } from '../../components/RangePicker.jsx'
 import { BASIS, FREQ, RUN_STATUS, employerCost, fmtDay, periodLabel } from './Payroll.jsx'
 
-const INPUTS = ['days_worked', 'hours_worked', 'basic_pay', 'overtime_pay', 'allowances_taxable', 'allowances_nontaxable', 'other_deductions']
+const INPUTS = ['days_worked', 'hours_worked', 'basic_pay', 'overtime_pay', 'allowances_taxable', 'allowances_nontaxable', 'cash_advance', 'other_deductions']
+const round2 = (n) => Math.round(n * 100) / 100
 const cell = 'tabular h-9 w-24 rounded-md bg-paper px-2 text-right ring-1 ring-ink/15 outline-none focus:ring-2 focus:ring-gold'
 const toInput = (v) => (v == null ? '' : String(Number(v)))
 const monthBounds = (d) => [d.slice(0, 8) + '01', addDays(new Date(Date.UTC(+d.slice(0, 4), +d.slice(5, 7), 1)).toISOString().slice(0, 10), -1)]
@@ -26,6 +28,7 @@ export default function PayRun() {
   const [rateRows, setRateRows] = useState([])
   const [priors, setPriors] = useState({})
   const [people, setPeople] = useState({})
+  const [advances, setAdvances] = useState({}) // employee id -> open cash advance (balance before this run)
   const [error, setError] = useState(null)
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(null)
@@ -35,23 +38,36 @@ export default function PayRun() {
   const { profile } = useAuth()
 
   const load = useCallback(async () => {
-    const [r, it, e, rr, pp] = await Promise.all([
+    const [r, it, e, rr, pp, ad] = await Promise.all([
       supabase.from('payroll_runs').select('*').eq('id', id).maybeSingle(),
       supabase.from('payroll_items').select('*').eq('run_id', id).order('employee_name'),
       supabase.from('employees').select('*').order('full_name'),
       supabase.from('payroll_rates').select('*'),
       supabase.from('profiles').select('id, full_name'),
+      supabase.from('v_cash_advances').select('*').eq('status', 'active').gt('balance', 0),
     ])
-    const err = [r, it, e, rr].find((x) => x.error)?.error
-    if (err) return setError(err.message)
+    const err = [r, it, e, rr, ad].find((x) => x.error)?.error
+    if (err) return setError(/cash_advance/.test(err.message) ? `${err.message}. Run supabase/014_day_summary_advances_stock.sql in Supabase › SQL Editor.` : err.message)
     if (!r.data) return setError('Pay run not found.')
     setError(null)
     setRun(r.data)
-    setItems(it.data.map((x) => ({ ...x, ...Object.fromEntries(INPUTS.map((k) => [k, toInput(x[k])])), deductions_note: x.deductions_note ?? '' })))
+    const owed = Object.fromEntries(ad.data.map((a) => [a.employee_id, a]))
+    // A draft picks up each open cash advance once, at the usual installment; the admin can change or zero it.
+    let filled = false
+    setItems(
+      it.data.map((x) => {
+        const row = { ...x, ...Object.fromEntries(INPUTS.map((k) => [k, toInput(x[k])])), deductions_note: x.deductions_note ?? '' }
+        const a = owed[x.employee_id]
+        if (r.data.status !== 'draft' || !a || x.advance_id) return row
+        filled = true
+        return { ...row, advance_id: a.id, cash_advance: String(Math.min(Number(a.installment), Number(a.balance))) }
+      }),
+    )
+    setAdvances(owed)
     setEmps(e.data)
     setRateRows(rr.data)
     setPeople(Object.fromEntries((pp.data ?? []).map((p) => [p.id, p.full_name])))
-    setDirty(false)
+    setDirty(filled)
   }, [id])
   useEffect(() => {
     load()
@@ -85,11 +101,17 @@ export default function PayRun() {
   const rates = useMemo(() => (run ? ratesOn(rateRows, run.pay_date) : {}), [rateRows, run])
   const missingRates = ['sss', 'philhealth', 'pagibig', 'tax'].filter((k) => !rates[k])
   // Drafts are computed live; finalized and voided runs show exactly what was stored.
-  const computeAll = (p) => items.map((it) => (draft && !missingRates.length ? { ...it, ...computePayslip(it, byId[it.employee_id] ?? { contributions_enabled: true }, rates, p[it.employee_id]) } : it))
+  const owedBy = (it) => (it.advance_id && advances[it.employee_id]?.id === it.advance_id ? Number(advances[it.employee_id].balance) : 0)
+  const computeAll = (p) =>
+    items.map((it) =>
+      draft && !missingRates.length
+        ? { ...it, ...computePayslip(it, byId[it.employee_id] ?? { contributions_enabled: true }, rates, p[it.employee_id]), advance_balance: it.advance_id ? round2(owedBy(it) - (Number(it.cash_advance) || 0)) : null }
+        : it,
+    )
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const slips = useMemo(() => computeAll(priors), [items, draft, rates, priors, emps])
+  const slips = useMemo(() => computeAll(priors), [items, draft, rates, priors, emps, advances])
   const total = (k) => slips.reduce((s, x) => s + (Number(x[k]) || 0), 0)
-  const eeDeductions = total('sss_ee') + total('philhealth_ee') + total('pagibig_ee') + total('withholding_tax') + total('other_deductions')
+  const eeDeductions = total('sss_ee') + total('philhealth_ee') + total('pagibig_ee') + total('withholding_tax') + total('cash_advance') + total('other_deductions')
   const erContrib = total('sss_er') + total('sss_ec') + total('philhealth_er') + total('pagibig_er')
 
   const edit = (i, k, v) => {
@@ -115,10 +137,10 @@ export default function PayRun() {
     setError(null)
     const runUpd = await supabase.from('payroll_runs').update({ period_start: run.period_start, period_end: run.period_end, pay_date: run.pay_date, notes: run.notes }).eq('id', id)
     const rows = computeAll(p).map((s) => {
-      const out = { id: s.id, run_id: id, employee_id: s.employee_id, employee_name: s.employee_name, pay_basis: s.pay_basis, rate: s.rate, deductions_note: s.deductions_note?.trim() || null }
+      const out = { id: s.id, run_id: id, employee_id: s.employee_id, employee_name: s.employee_name, pay_basis: s.pay_basis, rate: s.rate, deductions_note: s.deductions_note?.trim() || null, advance_id: s.advance_id ?? null }
       out.days_worked = s.days_worked === '' ? null : Number(s.days_worked)
       out.hours_worked = s.hours_worked === '' ? null : Number(s.hours_worked)
-      for (const k of ['basic_pay', 'overtime_pay', 'allowances_taxable', 'allowances_nontaxable', 'other_deductions', 'gross_pay', 'sss_ee', 'sss_er', 'sss_ec', 'philhealth_ee', 'philhealth_er', 'pagibig_ee', 'pagibig_er', 'taxable_income', 'withholding_tax', 'net_pay'])
+      for (const k of ['basic_pay', 'overtime_pay', 'allowances_taxable', 'allowances_nontaxable', 'cash_advance', 'other_deductions', 'gross_pay', 'sss_ee', 'sss_er', 'sss_ec', 'philhealth_ee', 'philhealth_er', 'pagibig_ee', 'pagibig_er', 'taxable_income', 'withholding_tax', 'net_pay'])
         out[k] = Number(s[k]) || 0
       return out
     })
@@ -136,6 +158,8 @@ export default function PayRun() {
   const finalize = async () => {
     if (missingRates.length) return setError('Rates are missing for this pay date. Add them in the Rates tab.')
     if (slips.some((s) => Number(s.net_pay) < 0)) return setError('A payslip has negative net pay. Lower its deductions first.')
+    const over = slips.find((s) => Number(s.cash_advance) > owedBy(s))
+    if (over) return setError(`${over.employee_name}'s cash advance deduction is more than the ${money(owedBy(over))} they owe.`)
     const fresh = await loadPriors(run.pay_date) // latest month-to-date figures before locking
     if (!fresh || !(await save(fresh))) return
     setBusy('finalize')
@@ -208,24 +232,29 @@ export default function PayRun() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {items.length > 0 && (
-            <button
-              type="button"
-              onClick={async () => {
-                setBusy('pdf')
-                try {
-                  await downloadPayslips({ run, items: slips, employees: emps, by: profile?.full_name })
-                } catch (e) {
-                  setError(e.message ?? String(e))
-                }
-                setBusy(null)
-              }}
-              disabled={busy !== null}
-              className="press flex h-11 items-center gap-2 rounded-lg px-4 font-semibold ring-1 ring-ink/15 disabled:opacity-40"
-            >
-              {busy === 'pdf' ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Download className="size-4" aria-hidden="true" />} {draft ? 'Preview payslips' : 'Payslips PDF'}
-            </button>
-          )}
+          {items.length > 0 &&
+            [
+              ['pdf', Download, draft ? 'Preview payslips' : 'Payslips PDF'],
+              ['print', Printer, 'Print payslips'],
+            ].map(([key, Icon, text]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={async () => {
+                  setBusy(key)
+                  try {
+                    await downloadPayslips({ run, items: slips, employees: emps, by: profile?.full_name, print: key === 'print' })
+                  } catch (e) {
+                    setError(e.message ?? String(e))
+                  }
+                  setBusy(null)
+                }}
+                disabled={busy !== null}
+                className="press flex h-11 items-center gap-2 rounded-lg px-4 font-semibold ring-1 ring-ink/15 disabled:opacity-40"
+              >
+                {busy === key ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Icon className="size-4" aria-hidden="true" />} {text}
+              </button>
+            ))}
         {draft && (
           <>
             <button type="button" onClick={() => save()} disabled={!dirty || busy} className="press flex h-11 items-center gap-2 rounded-lg px-4 font-semibold ring-1 ring-ink/15 disabled:opacity-40">
@@ -276,7 +305,7 @@ export default function PayRun() {
       <dl className="mt-4 grid grid-cols-2 overflow-hidden rounded-xl bg-paper ring-1 ring-ink/5 lg:grid-cols-5">
         {[
           ['Gross pay', total('gross_pay'), `${slips.length} payslip${slips.length === 1 ? '' : 's'}`],
-          ['Deducted from staff', eeDeductions, 'Contributions, tax, other'],
+          ['Deducted from staff', eeDeductions, 'Contributions, tax, advances, other'],
           ['Net pay to hand out', total('net_pay'), 'Cash or transfer to staff'],
           ['Employer contributions', erContrib, 'SSS, EC, PhilHealth, Pag-IBIG'],
           ['Cost to the gym', total('gross_pay') + erContrib, 'Goes into Expenses'],
@@ -291,7 +320,7 @@ export default function PayRun() {
 
       <p className="mt-4 text-xs text-smoke xl:hidden">Swipe or scroll the table sideways to see every column.</p>
       <div className="mt-2 overflow-x-auto rounded-xl bg-paper ring-1 ring-ink/5 xl:mt-4">
-        <table className="w-full min-w-[72rem] text-left text-sm">
+        <table className="w-full min-w-[78rem] text-left text-sm">
           <thead className="border-b border-ink/8 text-xs font-bold uppercase tracking-[0.06em] text-smoke">
             <tr>
               <th scope="col" className="sticky left-0 z-10 bg-paper px-4 py-3 font-bold">Employee</th>
@@ -305,6 +334,7 @@ export default function PayRun() {
               <th scope="col" className="px-2 py-3 text-right font-bold">PhilHealth</th>
               <th scope="col" className="px-2 py-3 text-right font-bold">Pag-IBIG</th>
               <th scope="col" className="px-2 py-3 text-right font-bold">Tax</th>
+              <th scope="col" className="px-2 py-3 text-right font-bold" title="Cash advance repayment">Cash adv.</th>
               <th scope="col" className="px-2 py-3 text-right font-bold">Other ded.</th>
               <th scope="col" className="px-4 py-3 text-right font-bold">Net pay</th>
             </tr>
@@ -336,11 +366,16 @@ export default function PayRun() {
                           s.deductions_note && <span className="block text-xs text-smoke">{s.deductions_note}</span>
                         )}
                       </span>
-                      {draft && (
-                        <button type="button" onClick={() => removeItem(s)} aria-label={`Remove ${s.employee_name} from this run`} className="press ml-auto grid size-7 shrink-0 place-items-center rounded-md text-smoke hover:bg-crimson/10 hover:text-crimson">
-                          <X className="size-4" aria-hidden="true" />
+                      <span className="ml-auto flex shrink-0 flex-col gap-1">
+                        <button type="button" onClick={() => printBytes(payslipBytes(s, run, { position: emp?.position }))} title="Print payslip on the receipt printer" aria-label={`Print ${s.employee_name}'s payslip on the receipt printer`} className="press grid size-7 place-items-center rounded-md text-smoke hover:bg-mist hover:text-ink">
+                          <Printer className="size-4" aria-hidden="true" />
                         </button>
-                      )}
+                        {draft && (
+                          <button type="button" onClick={() => removeItem(s)} aria-label={`Remove ${s.employee_name} from this run`} className="press grid size-7 place-items-center rounded-md text-smoke hover:bg-crimson/10 hover:text-crimson">
+                            <X className="size-4" aria-hidden="true" />
+                          </button>
+                        )}
+                      </span>
                     </span>
                   </td>
                   <td className="px-2 py-2.5 text-right">{unit ? (draft ? inp(unit, 'w-16') : `${Number(s[unit] ?? 0)} ${unit === 'days_worked' ? 'd' : 'h'}`) : <span className="text-smoke">–</span>}</td>
@@ -353,6 +388,16 @@ export default function PayRun() {
                   <td className="tabular px-2 py-2.5 text-right">{money(s.philhealth_ee)}</td>
                   <td className="tabular px-2 py-2.5 text-right">{money(s.pagibig_ee)}</td>
                   <td className="tabular px-2 py-2.5 text-right">{money(s.withholding_tax)}</td>
+                  <td className="px-2 py-2.5 text-right">
+                    {s.advance_id ? (
+                      <>
+                        {draft ? inp('cash_advance') : money(s.cash_advance)}
+                        {s.advance_balance != null && <span className="tabular mt-0.5 block text-xs text-smoke">{money(s.advance_balance)} left</span>}
+                      </>
+                    ) : (
+                      <span className="text-smoke">–</span>
+                    )}
+                  </td>
                   <td className="px-2 py-2.5 text-right">{inp('other_deductions')}</td>
                   <td className={`tabular px-4 py-2.5 text-right font-display text-xl font-black ${Number(s.net_pay) < 0 ? 'text-crimson' : ''}`}>{money(s.net_pay)}</td>
                 </tr>
@@ -360,7 +405,7 @@ export default function PayRun() {
             })}
             {!slips.length && (
               <tr>
-                <td colSpan={13} className="px-4 py-10 text-center text-smoke">
+                <td colSpan={14} className="px-4 py-10 text-center text-smoke">
                   Nobody in this run yet.
                 </td>
               </tr>
@@ -373,7 +418,7 @@ export default function PayRun() {
                   Totals
                 </th>
                 <td />
-                {['basic_pay', 'overtime_pay', 'allowances_taxable', 'allowances_nontaxable', 'gross_pay', 'sss_ee', 'philhealth_ee', 'pagibig_ee', 'withholding_tax', 'other_deductions'].map((k) => (
+                {['basic_pay', 'overtime_pay', 'allowances_taxable', 'allowances_nontaxable', 'gross_pay', 'sss_ee', 'philhealth_ee', 'pagibig_ee', 'withholding_tax', 'cash_advance', 'other_deductions'].map((k) => (
                   <td key={k} className="tabular px-2 py-3 text-right">
                     {money(total(k))}
                   </td>

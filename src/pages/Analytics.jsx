@@ -54,10 +54,10 @@ export default function Analytics() {
   useEffect(() => {
     let live = true
     setError(null)
-    supabase.rpc('sales_report', { p_from: range.from, p_to: range.to }).then(({ data, error }) => {
+    Promise.all([supabase.rpc('sales_report', { p_from: range.from, p_to: range.to }), supabase.rpc('stock_report', { p_from: range.from, p_to: range.to })]).then(([{ data, error }, stock]) => {
       if (!live) return
       if (error) setError(error.message)
-      else setReport(data)
+      else setReport({ ...data, stock: stock.error ? null : stock.data }) // stock is null before patch 014
     })
     return () => (live = false)
   }, [range.from, range.to])
@@ -454,20 +454,28 @@ const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '–')
 
 // ---- Tabs ----
 
-// Net profit = sales − cost of goods − expenses (payroll included once it's recorded as expenses).
+// Net profit = sales − cost of goods − expenses (payroll included once it's recorded as expenses) − stock losses.
+// Restocking isn't subtracted: goods become cost of goods when they sell.
 function General({ r }) {
   const t = r.totals
   const p = r.previous
   const ex = r.expenses
+  const st = r.stock
   const avg = t.receipts ? num(t.revenue) / t.receipts : 0
   const payTotal = r.payments.reduce((s, x) => s + num(x.total), 0)
-  const net = num(t.gross_profit) - num(ex?.total)
-  const prevNet = num(p.gross_profit) - num(ex?.previous)
+  const net = num(t.gross_profit) - num(ex?.total) - num(st?.losses)
+  const prevNet = num(p.gross_profit) - num(ex?.previous) - num(st?.previous_losses)
+  const lost = Object.fromEntries((st?.daily ?? []).map((d) => [d.date, num(d.losses)]))
   return (
     <>
       {!ex && (
         <p role="alert" className="mt-6 flex items-center gap-2 rounded-lg bg-gold/20 px-4 py-3 text-sm font-semibold text-[#6B4E00]">
           <CircleAlert className="size-4 shrink-0" aria-hidden="true" /> Expenses aren't in this report yet. In Supabase › SQL Editor, run supabase/006_expenses.sql, then refresh.
+        </p>
+      )}
+      {!st && (
+        <p role="alert" className="mt-6 flex items-center gap-2 rounded-lg bg-gold/20 px-4 py-3 text-sm font-semibold text-[#6B4E00]">
+          <CircleAlert className="size-4 shrink-0" aria-hidden="true" /> Inventory purchases and stock losses aren't in this report yet. In Supabase › SQL Editor, run supabase/014_day_summary_advances_stock.sql, then refresh.
         </p>
       )}
       <Kpis
@@ -483,8 +491,8 @@ function General({ r }) {
         ]}
       />
       <div className="mt-6 grid gap-6 xl:grid-cols-5">
-        <Panel title="Money in and out" note="Net profit is sales minus the cost of goods sold minus expenses" className="xl:col-span-5" i={0}>
-          <MoneyLines rows={r.daily} />
+        <Panel title="Money in and out" note="Net profit is sales minus the cost of goods sold, expenses and stock losses" className="xl:col-span-5" i={0}>
+          <MoneyLines rows={r.daily.map((d) => ({ ...d, losses: lost[d.date] ?? 0 }))} />
         </Panel>
         <Panel title="Sales over time" note="Each bar is the sale total, split into what the goods cost and the profit kept" className="xl:col-span-3" i={1}>
           <SalesChart rows={r.daily} />
@@ -498,8 +506,26 @@ function General({ r }) {
         <Panel title="How customers paid" note={payTotal ? 'Share of sales by payment method' : null} className="xl:col-span-2" i={4}>
           <HBars rows={r.payments.map((x) => ({ name: `${METHOD[x.method] ?? x.method} · ${pct(num(x.total), payTotal)}`, value: num(x.total) }))} />
         </Panel>
-        <Panel title="Sales by category" note="Before receipt discounts" className="xl:col-span-5" i={5}>
+        <Panel title="Sales by category" note="Before receipt discounts" className="xl:col-span-3" i={5}>
           <HBars rows={r.categories.map((x) => ({ name: x.category, value: num(x.revenue) }))} />
+        </Panel>
+        <Panel title="Stock" note="From Inventory: deliveries received, spoilage and stock counts" className="xl:col-span-2" i={6}>
+          {st ? (
+            <dl className="divide-y divide-ink/8">
+              {[
+                ['Inventory purchases', st.purchases, 'Cash spent restocking. Not taken off profit: goods count as cost of goods when they sell.'],
+                [num(st.losses) < 0 ? 'Stock found' : 'Stock losses', Math.abs(num(st.losses)), num(st.losses) < 0 ? 'Counts found more stock than recorded, at cost. Added back to net profit.' : 'Spoilage and stock-count shortages, at cost. Taken off net profit.'],
+              ].map(([k, v, note]) => (
+                <div key={k} className="py-3 first:pt-0 last:pb-0">
+                  <dt className="text-sm font-semibold text-smoke">{k}</dt>
+                  <dd className="tabular mt-1 font-display text-3xl font-black leading-none">{money(v)}</dd>
+                  <dd className="mt-1 text-xs text-smoke">{note}</dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <Empty>Run patch 014 to see stock bought and lost.</Empty>
+          )}
         </Panel>
       </div>
     </>
@@ -515,8 +541,8 @@ const LINES = [
 // Three lines on one ₱ axis, a zero line for losses, and each line's latest value labelled at its end.
 function MoneyLines({ rows }) {
   // Days only up to two weeks: rent and bills land on single days, so daily net profit swings misleadingly.
-  const { unit, data } = bucketize(rows, ['revenue', 'profit', 'expenses'], 14)
-  const chart = data.map((d) => ({ ...d, net: d.profit - d.expenses }))
+  const { unit, data } = bucketize(rows, ['revenue', 'profit', 'expenses', 'losses'], 14)
+  const chart = data.map((d) => ({ ...d, net: d.profit - d.expenses - d.losses }))
   if (!chart.some((d) => d.revenue || d.expenses)) return <Empty>No sales or expenses in this range yet.</Empty>
   const last = chart.length - 1
   const fmtAxis = (v) => (v < 0 ? '−' + shortPeso(-v) : shortPeso(v))

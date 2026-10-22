@@ -11,6 +11,7 @@ import { addDays } from '../../components/RangePicker.jsx'
 import PayRun from './PayRun.jsx'
 import Employees from './Employees.jsx'
 import Rates from './Rates.jsx'
+import Advances from './Advances.jsx'
 
 export const FREQ = { weekly: 'Weekly', semi_monthly: 'Twice a month', monthly: 'Monthly' }
 export const BASIS = { monthly: 'month', daily: 'day', hourly: 'hour' }
@@ -36,6 +37,7 @@ function suggestPeriod(freq, today) {
 const TABS = [
   ['Pay runs', '/payroll'],
   ['Employees', '/payroll/employees'],
+  ['Cash advances', '/payroll/advances'],
   ['Rates', '/payroll/rates'],
 ]
 
@@ -60,6 +62,7 @@ export default function Payroll() {
         <Route index element={<Runs />} />
         <Route path="runs/:id" element={<PayRun />} />
         <Route path="employees" element={<Employees />} />
+        <Route path="advances" element={<Advances />} />
         <Route path="rates" element={<Rates />} />
       </Routes>
     </main>

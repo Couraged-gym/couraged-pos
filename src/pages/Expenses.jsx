@@ -424,6 +424,7 @@ function ExpenseSheet({ expense, preset, cats, people, today, onClose, onDone })
                     </option>
                   ))}
                 </select>
+                <span className="mt-1 block font-normal text-smoke">Stock for resale (drinks, supplements) goes in Inventory (Receive on the product), not here, or it would count twice against profit.</span>
               </label>
               <label className={label}>
                 Description

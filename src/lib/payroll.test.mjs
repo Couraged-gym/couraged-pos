@@ -76,6 +76,9 @@ assert.equal(round(weeks.reduce((t, w) => t + w.philhealth_ee, 0)), philhealth(m
 
 const mwe = computePayslip({ basic_pay: 40000 }, emp({ rate: 40000, pay_frequency: 'monthly', minimum_wage_earner: true }), rates)
 assert.equal(mwe.withholding_tax, 0); ok('minimum wage earners are not taxed')
+const adv = computePayslip({ basic_pay: 40000, cash_advance: 1000 }, emp({ rate: 40000, pay_frequency: 'monthly' }), rates)
+assert.equal(adv.cash_advance, 1000); assert.equal(adv.taxable_income, m.taxable_income); assert.equal(adv.withholding_tax, m.withholding_tax)
+assert.equal(round(adv.net_pay), round(m.net_pay - 1000)); ok('a ₱1,000 cash advance repayment comes off net pay only, not tax or contributions')
 const contractor = computePayslip({ basic_pay: 10000 }, emp({ contributions_enabled: false }), rates)
 assert.equal(contractor.sss_ee + contractor.philhealth_ee + contractor.pagibig_ee, 0); ok('contributions can be switched off per person')
 

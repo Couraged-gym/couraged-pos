@@ -130,15 +130,16 @@ const METHOD = { cash: 'Cash', gcash: 'GCash', maya: 'Maya', card: 'Card', bank_
 // expenses: recorded expenses in the period with a category name.
 // payroll: finalized pay runs paid in the period with their items.
 // ---------------------------------------------------------------------------------
-export function salesReportPdf({ r, label, expenses = [], payroll = [], logo, by }) {
+// stock: stock_report() result, or null before patch 014.
+export function salesReportPdf({ r, stock = null, label, expenses = [], payroll = [], logo, by }) {
   const doc = newDoc()
   const t = r.totals
   const p = r.previous
   const ex = r.expenses ?? { total: 0, previous: 0, by_category: [] }
   const cost = num(t.revenue) - num(t.gross_profit)
   const prevCost = num(p.revenue) - num(p.gross_profit)
-  const net = num(t.gross_profit) - num(ex.total)
-  const prevNet = num(p.gross_profit) - num(ex.previous)
+  const net = num(t.gross_profit) - num(ex.total) - num(stock?.losses)
+  const prevNet = num(p.gross_profit) - num(ex.previous) - num(stock?.previous_losses)
   let y = header(doc, { logo, title: 'Sales & profit report', period: label })
 
   doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(...SMOKE)
@@ -175,13 +176,19 @@ export function salesReportPdf({ r, label, expenses = [], payroll = [], logo, by
       ['Less: operating expenses', '', '', ''],
       ...catRows.map((r) => [...r, '']),
       ['Total operating expenses', amt(ex.total), amt(ex.previous), amt(num(ex.total) - num(ex.previous))],
+      ...(stock ? [['Less: stock losses (spoilage, count shortages)', amt(stock.losses), amt(stock.previous_losses), amt(num(stock.losses) - num(stock.previous_losses))]] : []),
       [net < 0 ? 'Net loss' : 'Net profit', amt(net), amt(prevNet), amt(net - prevNet)],
     ],
     right: [1, 2, 3],
     bold: [2, 4 + catRows.length],
-    emphasize: (i) => i === 5 + catRows.length,
+    emphasize: (i) => i === 5 + catRows.length + (stock ? 1 : 0),
     widths: { 0: 78 },
   })
+  if (stock) {
+    doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...SMOKE)
+    doc.text(plain(`Inventory bought for restocking this period: PHP ${amt(stock.purchases)}. Not subtracted above: goods count as cost of goods sold when they sell.`), M, y - 3, { maxWidth: W - 2 * M })
+    y += 4
+  }
 
   y = section(doc, y, 'Key figures')
   y = table(doc, y, {
@@ -283,10 +290,10 @@ export function payslipsPdf({ run, items, employees = [], logo, by }) {
   y += 8
   y = section(doc, y, 'Payslips', 'PHP')
   y = table(doc, y, {
-    head: ['Employee', 'Gross', 'SSS', 'PhilHealth', 'Pag-IBIG', 'Tax', 'Other', 'Net pay'],
-    body: items.map((it) => [it.employee_name, amt(it.gross_pay), amt(it.sss_ee), amt(it.philhealth_ee), amt(it.pagibig_ee), amt(it.withholding_tax), amt(it.other_deductions), amt(it.net_pay)]),
-    foot: ['Total', amt(sum('gross_pay')), amt(sum('sss_ee')), amt(sum('philhealth_ee')), amt(sum('pagibig_ee')), amt(sum('withholding_tax')), amt(sum('other_deductions')), amt(sum('net_pay'))],
-    right: [1, 2, 3, 4, 5, 6, 7],
+    head: ['Employee', 'Gross', 'SSS', 'PhilHealth', 'Pag-IBIG', 'Tax', 'Cash adv.', 'Other', 'Net pay'],
+    body: items.map((it) => [it.employee_name, amt(it.gross_pay), amt(it.sss_ee), amt(it.philhealth_ee), amt(it.pagibig_ee), amt(it.withholding_tax), amt(it.cash_advance), amt(it.other_deductions), amt(it.net_pay)]),
+    foot: ['Total', amt(sum('gross_pay')), amt(sum('sss_ee')), amt(sum('philhealth_ee')), amt(sum('pagibig_ee')), amt(sum('withholding_tax')), amt(sum('cash_advance')), amt(sum('other_deductions')), amt(sum('net_pay'))],
+    right: [1, 2, 3, 4, 5, 6, 7, 8],
   })
   y = section(doc, y, 'To remit', 'PHP')
   y = table(doc, y, {
@@ -341,9 +348,10 @@ export function payslipsPdf({ run, items, employees = [], logo, by }) {
       ['PhilHealth', amt(it.philhealth_ee)],
       ['Pag-IBIG', amt(it.pagibig_ee)],
       ['Withholding tax', amt(it.withholding_tax)],
+      ...(num(it.cash_advance) ? [['Cash advance' + (it.advance_balance != null ? ` (PHP ${amt(it.advance_balance)} left)` : ''), amt(it.cash_advance)]] : []),
       ['Other' + (it.deductions_note ? ` (${it.deductions_note})` : ''), amt(it.other_deductions)],
     ]
-    const totalDed = num(it.sss_ee) + num(it.philhealth_ee) + num(it.pagibig_ee) + num(it.withholding_tax) + num(it.other_deductions)
+    const totalDed = num(it.sss_ee) + num(it.philhealth_ee) + num(it.pagibig_ee) + num(it.withholding_tax) + num(it.cash_advance) + num(it.other_deductions)
     const twoCol = (x, head, body, foot) =>
       autoTable(doc, {
         startY: py,

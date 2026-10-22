@@ -270,4 +270,43 @@ await as(A, `update products set selling_price = 999 where id = $1`, [mid])
 const ex2 = (await as(A, `select sales_export($1::date - 6, $1::date) as r`, [today]))[0].r
 assert.deepEqual(ex2.lines, ex.lines); ok('changing a price today leaves past export rows untouched')
 assert.equal(ex.log, null); assert.equal((await as(A, `select sales_export($1::date, $1::date, true) as r`, [today]))[0].r.log.length > 0, true); ok('transaction log only when asked for')
+// 014: day summary.
+const ds = (await as(S, `select day_summary($1::date) as r`, [today]))[0].r
+const rep1 = (await as(A, `select sales_report($1::date, $1::date) as r`, [today]))[0].r
+assert.deepEqual([+ds.net, ds.receipts, ds.voids.count], [+rep1.totals.revenue, rep1.totals.receipts, rep1.voids.count]); ok(`staff day summary matches the admin report: ₱${ds.net}, ${ds.receipts} receipts`)
+assert.equal(Math.round((ds.gross - ds.discounts) * 100), Math.round(ds.net * 100))
+assert.equal(Math.round(sum(ds.categories, (x) => +x.total) * 100), Math.round(ds.gross * 100))
+assert.equal(Math.round(sum(ds.payments, (x) => +x.total) * 100), Math.round(ds.net * 100)); ok('gross − discounts = net; categories add up to gross, payments to net')
+const Z = '00000000-0000-0000-0000-00000000000f'
+await db.exec(`insert into auth.users (id, email) values ('${Z}', 'new@x')`)
+await fails(Z, `select day_summary(current_date)`, /Not authorized/); ok('inactive user cannot print the day summary')
+// 014: cash advances.
+const advSql = `insert into cash_advances (employee_id, given_on, amount, installment, authorized, created_by) values ($1, $2, 3000, 1000, $3, $4) returning id`
+await fails(A, advSql, /check/, [emp, today, false, A]); ok('an advance needs the signed authorization')
+const adv = (await as(A, advSql, [emp, today, true, A]))[0].id
+assert.equal((await as(S, 'select * from cash_advances')).length, 0); ok('staff cannot see cash advances')
+await fails(A, advSql, /still has a cash advance/, [emp, today, true, A]); ok('one open advance per employee')
+const run3 = (await as(A, `insert into payroll_runs (pay_frequency, period_start, period_end, pay_date) values ('monthly', $1::date - 30, $1::date, $1::date) returning id`, [today]))[0].id
+await as(A, `insert into payroll_items (run_id, employee_id, employee_name, pay_basis, rate, basic_pay, gross_pay, net_pay, advance_id, cash_advance) values ($1, $2, 'Coach Karl', 'monthly', 1, 5000, 5000, 1000, $3, 4000)`, [run3, emp, adv])
+await fails(A, `select finalize_payroll($1, '{}')`, /more than the employee owes/, [run3]); ok('cannot deduct more than the balance')
+await as(A, `update payroll_items set cash_advance = 1000, net_pay = 4000 where run_id = $1`, [run3])
+await as(A, `select finalize_payroll($1, '{}')`, [run3])
+const bal = async () => +(await as(A, `select balance from v_cash_advances where id = $1`, [adv]))[0].balance
+assert.equal(await bal(), 2000); assert.equal(+(await one(`select advance_balance from payroll_items where run_id = '${run3}'`)).advance_balance, 2000); ok('finalizing deducts ₱1,000, balance ₱2,000 stamped on the payslip')
+assert.equal(+(await one(`select amount from expenses where payroll_run_id = '${run3}' and description like 'Salaries%'`)).amount, 5000); ok('payroll expense is gross pay: the advance is not an expense')
+await fails(A, `select void_cash_advance($1, 'x')`, /already deducted/, [adv]); ok('an advance being repaid cannot be voided')
+await as(A, `select void_payroll_run($1, 'Test')`, [run3])
+assert.equal(await bal(), 3000); ok('voiding the pay run gives the deduction back')
+await fails(S, `select void_cash_advance($1, 'x')`, /Only an admin/, [adv])
+await as(A, `select void_cash_advance($1, 'Given by mistake')`, [adv])
+await as(A, advSql, [emp, today, true, A]); ok('after voiding, a new advance can be given')
+// 014: stock report.
+await fails(S, `select stock_report(current_date, current_date)`, /Only an admin/); ok('staff cannot open the stock report')
+const stock = async () => (await as(A, `select stock_report($1::date - 6, $1::date) as r`, [today]))[0].r
+const st1 = await stock()
+const bought = +(await one(`select sum(qty * unit_cost) s from stock_movements where movement_type = 'purchase'`)).s
+assert.equal(Math.round(st1.purchases * 100), Math.round(bought * 100)); ok(`inventory purchases ₱${st1.purchases}`)
+await as(S, `insert into stock_movements (product_id, movement_type, qty, note, created_by) values ($1, 'spoilage', -1, 'Expired', $2)`, [p9, S])
+const st2 = await stock()
+assert.equal(Math.round((st2.losses - st1.losses) * 100), 3900); assert.equal(+st2.purchases, +st1.purchases); ok('one spoiled ₱39 item adds ₱39 to stock losses, not to purchases')
 console.log('all passed')
