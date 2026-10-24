@@ -10,8 +10,10 @@ import { Segmented, Sheet } from '../components/ui.jsx'
 import { Notice, Problem, StatusPill, Submit, field, label } from '../components/form.jsx'
 import { Drawer } from './Inventory.jsx'
 
+// End date of the annual membership paid before the POS (a period with no sale), or ''.
+const paidBefore = (periods) => periods?.find((p) => !p.sale_id && p.is_membership && !p.voided)?.ends_on ?? ''
 const daysLeft = (end) => Math.round((Date.parse(end) - Date.parse(manilaToday())) / 864e5)
-const missingPatch = (e) => (/schema cache|does not exist/i.test(e.message) ? 'The database is missing an update. In Supabase › SQL Editor, run supabase/009_members.sql, 011_member_codes.sql, 013_gym_rates.sql and 015_member_codes_payslip_lines.sql, then refresh this page.' : e.message)
+const missingPatch = (e) => (/schema cache|does not exist/i.test(e.message) ? 'The database is missing an update. In Supabase › SQL Editor, run supabase/009_members.sql, 011_member_codes.sql, 013_gym_rates.sql, 015_member_codes_payslip_lines.sql and 016_membership_paid_before.sql, then refresh this page.' : e.message)
 
 // Words first, colour second.
 export function standing(m) {
@@ -246,7 +248,7 @@ function Plans() {
 
 function MemberSheet({ member, onClose, onSaved, onSell }) {
   const create = !member
-  const [f, setF] = useState({ code: member?.code ?? '', full_name: member?.full_name ?? '', phone: member?.phone ?? '', notes: member?.notes ?? '' })
+  const [f, setF] = useState({ code: member?.code ?? '', full_name: member?.full_name ?? '', phone: member?.phone ?? '', notes: member?.notes ?? '', paid_until: '' })
   const [busy, setBusy] = useState(null)
   const [err, setErr] = useState(null)
   const [periods, setPeriods] = useState(null)
@@ -256,10 +258,13 @@ function MemberSheet({ member, onClose, onSaved, onSell }) {
     if (create) return
     supabase
       .from('member_periods')
-      .select('id, plan_name, starts_on, ends_on, voided, sales(sale_no)')
+      .select('id, plan_name, starts_on, ends_on, voided, sale_id, is_membership, sales(sale_no)')
       .eq('member_id', member.id)
       .order('ends_on', { ascending: false })
-      .then(({ data }) => setPeriods(data ?? []))
+      .then(({ data }) => {
+        setPeriods(data ?? [])
+        setF((x) => ({ ...x, paid_until: paidBefore(data) }))
+      })
   }, [create, member?.id])
 
   const save = async (sell) => {
@@ -269,9 +274,14 @@ function MemberSheet({ member, onClose, onSaved, onSell }) {
     setBusy(sell ? 'sell' : 'save')
     setErr(null)
     const res = create ? await supabase.from('members').insert(c).select('id, code').single() : await supabase.from('members').update(c).eq('id', member.id)
+    if (res.error) return setBusy(null), setErr(res.error.code === '23505' ? `${c.code} is already someone else's code.` : missingPatch(res.error))
+    if (f.paid_until !== paidBefore(periods)) {
+      const id = create ? res.data.id : member.id
+      const { error } = await supabase.rpc('set_member_until', { p_member_id: id, p_until: f.paid_until || null })
+      if (error) return setBusy(null), setErr(`${create ? `Registered as ${res.data.code}, but the` : 'The'} membership date wasn't saved. ${missingPatch(error)}`)
+    }
     setBusy(null)
-    if (res.error) return setErr(res.error.code === '23505' ? `${c.code} is already someone else's code.` : missingPatch(res.error))
-    if (sell) onSell({ ...member, ...c, ...(create && res.data) })
+    if (sell) onSell({ ...member, ...c, ...(create && res.data), ...(f.paid_until && f.paid_until > (member?.member_until ?? '') && { member_until: f.paid_until }) })
     else onSaved(create ? `${c.full_name} registered as ${res.data.code}. Give them this code; they'll use it to pay and renew.` : `Saved ${c.full_name}.`)
   }
 
@@ -286,6 +296,10 @@ function MemberSheet({ member, onClose, onSaved, onSell }) {
         <label className={label}>
           Gym code <span className="font-normal text-smoke">({create ? 'blank gives the next number' : 'change only to fix a typo'})</span>
           <input value={f.code} onChange={set('code')} autoCapitalize="characters" placeholder={`CRDFH${manilaToday().slice(2, 4)}-0001`} className={`${field} tabular mt-1.5 uppercase`} />
+        </label>
+        <label className={label}>
+          Annual membership paid until <span className="font-normal text-smoke">(only if they paid before the POS)</span>
+          <input type="date" value={f.paid_until} onChange={set('paid_until')} className={`${field} tabular mt-1.5`} />
         </label>
         <label className={label}>
           Full name
@@ -319,7 +333,7 @@ function MemberSheet({ member, onClose, onSaved, onSell }) {
                 <span>
                   <b className="font-semibold">{p.plan_name}</b> · {fmtDay(p.starts_on)} – {fmtDay(p.ends_on, { month: 'short', day: 'numeric', year: 'numeric' })}
                 </span>
-                <span className="shrink-0 text-smoke">{p.voided ? 'Voided' : p.sales?.sale_no ? `#${String(p.sales.sale_no).padStart(5, '0')}` : ''}</span>
+                <span className="shrink-0 text-smoke">{p.voided ? 'Voided' : p.sales?.sale_no ? `#${String(p.sales.sale_no).padStart(5, '0')}` : p.sale_id ? '' : 'Paid before'}</span>
               </li>
             ))}
           </ul>

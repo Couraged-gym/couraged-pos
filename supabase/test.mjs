@@ -258,6 +258,15 @@ vm = (await as(T, `select ends_on::text as ends_on, member_until::text as mu fro
 assert.deepEqual([vm.ends_on, vm.mu], [await dayOf(59), await dayOf(364)]); ok('monthly extends gym time only')
 await sell13([{ product_id: annual, qty: 1 }], mem)
 assert.equal((await as(T, `select member_until::text as mu from v_members where id = $1`, [mem]))[0].mu, await dayOf(729)); ok('early membership renewal adds a year from the end')
+// 016: annual membership paid before the POS.
+const pb = (await as(T, `insert into members (full_name, created_by) values ('Paid Before', $1) returning id`, [T]))[0].id
+await as(T, `select set_member_until($1, $2::date + 100)`, [pb, today])
+await as(T, `select set_member_until($1, $2::date + 200)`, [pb, today])
+assert.equal((await as(T, `select member_until::text as mu from v_members where id = $1`, [pb]))[0].mu, await dayOf(200)); ok('staff set when a paid-before membership ends, editing replaces it')
+await sell13([{ product_id: dayM, qty: 1 }], pb); ok('paid-before members get the member rate')
+await sell13([{ product_id: annual, qty: 1 }], pb)
+assert.equal((await as(T, `select member_until::text as mu from v_members where id = $1`, [pb]))[0].mu, await dayOf(565)); ok('renewing adds a year from the paid-before end')
+await fails('00000000-0000-0000-0000-0000000000ff', `select set_member_until($1, null)`, /Only staff/, [pb]); ok('non-staff cannot set it')
 // 010: sales export.
 await fails(S, `select sales_export(current_date, current_date)`, /Only an admin/); ok('staff cannot export sales')
 const p9 = (await one(`select id from products where code = 'CFH09'`)).id
