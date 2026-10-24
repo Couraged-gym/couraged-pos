@@ -4,6 +4,7 @@
 // blank paper or fed the whole roll, while raw ESC/POS is what the PC's old POS does too.
 import { money } from './util.js'
 import { RECEIPT } from '../config/receipt.js'
+import { LOANS, OTHERS, totalDeductions } from './payroll.js'
 
 const ESC = '\x1b', GS = '\x1d'
 const BOLD = ESC + 'E\x01', NORMAL_WEIGHT = ESC + 'E\x00'
@@ -127,7 +128,6 @@ export function payslipBytes(it, run, { position, paperWidth = RECEIPT.paperWidt
   const { row, hr, title, bold, big, centred } = layout(paperWidth)
   const n = (v) => Number(v) || 0
   const opt = (l, v) => (n(v) ? row(l, peso(v)) : '') // optional lines print only when there's an amount
-  const ded = ['sss_ee', 'philhealth_ee', 'pagibig_ee', 'withholding_tax', 'cash_advance', 'other_deductions'].reduce((t, k) => t + n(it[k]), 0)
   const basis = { monthly: 'month', daily: 'day', hourly: 'hour' }[it.pay_basis]
   const has = (v) => v != null && v !== ''
   const worked = has(it.days_worked) ? `${n(it.days_worked)} days` : has(it.hours_worked) ? `${n(it.hours_worked)} hrs` : null
@@ -148,17 +148,20 @@ export function payslipBytes(it, run, { position, paperWidth = RECEIPT.paperWidt
     opt('Overtime', it.overtime_pay),
     opt('Allowances (taxable)', it.allowances_taxable),
     opt('Allowances (non-taxable)', it.allowances_nontaxable),
-    bold(row('Gross pay', peso(it.gross_pay))),
+    bold(row('Salary', peso(it.gross_pay))),
     hr,
-    bold('DEDUCTIONS\n'),
+    bold('LESS: DEDUCTIONS\n'),
     row('SSS', peso(it.sss_ee)),
-    row('PhilHealth', peso(it.philhealth_ee)),
     row('Pag-IBIG', peso(it.pagibig_ee)),
-    row('Withholding tax', peso(it.withholding_tax)),
-    opt('Cash advance', it.cash_advance),
-    n(it.cash_advance) && it.advance_balance != null ? row('  Balance left', peso(it.advance_balance)) : '',
-    opt('Other' + (it.deductions_note ? ` (${it.deductions_note})` : ''), it.other_deductions),
-    bold(row('Total deductions', peso(ded))),
+    row('PhilHealth', peso(it.philhealth_ee)),
+    ...LOANS.map(([k, l]) => row(l, peso(it[k]))),
+    opt('Withholding tax', it.withholding_tax),
+    bold('OTHERS\n'),
+    ...OTHERS.map(([k, l]) => row('  ' + l, peso(it[k]))),
+    row('  Cash advance', peso(it.cash_advance)),
+    n(it.cash_advance) && it.advance_balance != null ? row('    Balance left', peso(it.advance_balance)) : '',
+    opt('  Other' + (it.deductions_note ? ` (${it.deductions_note})` : ''), it.other_deductions),
+    bold(row('Total deductions', peso(totalDeductions(it)))),
     hr,
     big('NET PAY', peso(it.net_pay)),
     hr,

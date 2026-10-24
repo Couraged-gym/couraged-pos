@@ -38,6 +38,14 @@ export function withholding(taxable, c) {
   return Math.max(0, round2(b.base + b.rate * (taxable - b.over)))
 }
 
+// Payslip deductions the admin types in, in payslip order: loans under the government lines, then "Others".
+export const LOANS = [['pagibig_loan', 'Pag-IBIG loan'], ['sss_loan', 'SSS loan']]
+export const OTHERS = [['rice', 'Rice'], ['paraphernalia', 'Paraphernalia'], ['loan', 'Loan']]
+const TYPED = [...LOANS, ...OTHERS].map(([k]) => k)
+
+// Everything taken off one payslip.
+export const totalDeductions = (it) => round2(['sss_ee', 'philhealth_ee', 'pagibig_ee', 'withholding_tax', 'cash_advance', 'other_deductions', ...TYPED].reduce((t, k) => t + (Number(it[k]) || 0), 0))
+
 const PERIODS_PER_MONTH = { monthly: 1, semi_monthly: 2, weekly: 52 / 12 }
 
 // Suggested basic pay for one payout; the admin can overwrite it on the payslip.
@@ -85,7 +93,8 @@ export function computePayslip(inp, emp, rates, prior = EMPTY_PRIOR) {
   }
   const taxable = Math.max(0, round2(comp - s.ee - ph.ee - pi.ee))
   const tax = emp.minimum_wage_earner ? 0 : Math.max(0, round2(withholding(prior.taxable + taxable, rates.tax) - prior.withholding_tax))
-  const net = round2(gross - s.ee - ph.ee - pi.ee - tax - other - adv)
+  const typed = Object.fromEntries(TYPED.map((k) => [k, n(inp[k])]))
+  const net = round2(gross - s.ee - ph.ee - pi.ee - tax - other - adv - Object.values(typed).reduce((a, b) => a + b, 0))
 
   return {
     basic_pay: basic,
@@ -94,6 +103,7 @@ export function computePayslip(inp, emp, rates, prior = EMPTY_PRIOR) {
     allowances_nontaxable: allowN,
     other_deductions: other,
     cash_advance: adv,
+    ...typed,
     gross_pay: gross,
     sss_ee: s.ee,
     sss_er: s.er,

@@ -4,6 +4,7 @@
 // negatives use accounting brackets: (1,234.00).
 import { jsPDF } from 'jspdf'
 import { autoTable } from 'jspdf-autotable'
+import { LOANS, OTHERS, totalDeductions } from './payroll.js'
 
 const INK = [25, 23, 27]
 const GOLD = [254, 190, 16]
@@ -283,6 +284,7 @@ export function payslipsPdf({ run, items, employees = [], logo, by }) {
   const sum = (k) => items.reduce((s, it) => s + num(it[k]), 0)
   const er = sum('sss_er') + sum('sss_ec') + sum('philhealth_er') + sum('pagibig_er')
   const draft = run.status !== 'finalized'
+  const rest = (it) => totalDeductions(it) - num(it.sss_ee) - num(it.philhealth_ee) - num(it.pagibig_ee) - num(it.withholding_tax)
 
   let y = header(doc, { logo, title: `Payroll summary${draft ? ' (not final)' : ''}`, period })
   doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(...SMOKE)
@@ -290,10 +292,10 @@ export function payslipsPdf({ run, items, employees = [], logo, by }) {
   y += 8
   y = section(doc, y, 'Payslips', 'PHP')
   y = table(doc, y, {
-    head: ['Employee', 'Gross', 'SSS', 'PhilHealth', 'Pag-IBIG', 'Tax', 'Cash adv.', 'Other', 'Net pay'],
-    body: items.map((it) => [it.employee_name, amt(it.gross_pay), amt(it.sss_ee), amt(it.philhealth_ee), amt(it.pagibig_ee), amt(it.withholding_tax), amt(it.cash_advance), amt(it.other_deductions), amt(it.net_pay)]),
-    foot: ['Total', amt(sum('gross_pay')), amt(sum('sss_ee')), amt(sum('philhealth_ee')), amt(sum('pagibig_ee')), amt(sum('withholding_tax')), amt(sum('cash_advance')), amt(sum('other_deductions')), amt(sum('net_pay'))],
-    right: [1, 2, 3, 4, 5, 6, 7, 8],
+    head: ['Employee', 'Gross', 'SSS', 'PhilHealth', 'Pag-IBIG', 'Tax', 'Loans & others', 'Net pay'],
+    body: items.map((it) => [it.employee_name, amt(it.gross_pay), amt(it.sss_ee), amt(it.philhealth_ee), amt(it.pagibig_ee), amt(it.withholding_tax), amt(rest(it)), amt(it.net_pay)]),
+    foot: ['Total', amt(sum('gross_pay')), amt(sum('sss_ee')), amt(sum('philhealth_ee')), amt(sum('pagibig_ee')), amt(sum('withholding_tax')), amt(items.reduce((s, it) => s + rest(it), 0)), amt(sum('net_pay'))],
+    right: [1, 2, 3, 4, 5, 6, 7],
   })
   y = section(doc, y, 'To remit', 'PHP')
   y = table(doc, y, {
@@ -345,13 +347,16 @@ export function payslipsPdf({ run, items, employees = [], logo, by }) {
     ]
     const deductions = [
       ['SSS', amt(it.sss_ee)],
-      ['PhilHealth', amt(it.philhealth_ee)],
       ['Pag-IBIG', amt(it.pagibig_ee)],
-      ['Withholding tax', amt(it.withholding_tax)],
-      ...(num(it.cash_advance) ? [['Cash advance' + (it.advance_balance != null ? ` (PHP ${amt(it.advance_balance)} left)` : ''), amt(it.cash_advance)]] : []),
-      ['Other' + (it.deductions_note ? ` (${it.deductions_note})` : ''), amt(it.other_deductions)],
+      ['PhilHealth', amt(it.philhealth_ee)],
+      ...LOANS.map(([k, l]) => [l, amt(it[k])]),
+      ...(num(it.withholding_tax) ? [['Withholding tax', amt(it.withholding_tax)]] : []),
+      ['Others:', ''],
+      ...OTHERS.map(([k, l]) => ['   ' + l, amt(it[k])]),
+      ['   Cash advance' + (it.advance_balance != null && num(it.cash_advance) ? ` (PHP ${amt(it.advance_balance)} left)` : ''), amt(it.cash_advance)],
+      ...(num(it.other_deductions) ? [['   Other' + (it.deductions_note ? ` (${it.deductions_note})` : ''), amt(it.other_deductions)]] : []),
     ]
-    const totalDed = num(it.sss_ee) + num(it.philhealth_ee) + num(it.pagibig_ee) + num(it.withholding_tax) + num(it.cash_advance) + num(it.other_deductions)
+    const totalDed = totalDeductions(it)
     const twoCol = (x, head, body, foot) =>
       autoTable(doc, {
         startY: py,

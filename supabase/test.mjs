@@ -231,6 +231,14 @@ assert.equal((await as(X, `select * from members`)).length, (await one('select c
 const codes = await as(T, `select member_no::int n, full_name from v_members order by member_no`)
 assert.deepEqual(codes.map((c) => c.n), [1, 2, 3]); assert.equal(codes[0].full_name, 'Juan Dela Cruz'); ok('members are numbered in the order they joined (M0001…)')
 await fails(T, `update members set member_no = 99 where id = $1`, /permission denied|DEFAULT/, [mem]); ok('member codes cannot be changed')
+// 015: gym codes CRDFH26-0012.
+const yy = (await one(`select to_char(now() at time zone 'Asia/Manila', 'YY') y`)).y
+assert.deepEqual((await as(T, `select code from v_members order by member_no`)).map((c) => c.code), [1, 2, 3].map((n) => `CRDFH${yy}-000${n}`)); ok('members from before 015 get codes in the order they joined')
+assert.equal((await as(T, `insert into members (full_name, code) values ('Old Card', ' crdfh${yy}-0040 ') returning code`))[0].code, `CRDFH${yy}-0040`); ok('an existing card code can be typed in')
+assert.equal((await as(T, `insert into members (full_name) values ('Next One') returning code`))[0].code, `CRDFH${yy}-0041`); ok('a blank code gets the next number this year')
+await fails(T, `insert into members (full_name, code) values ('Dup', 'CRDFH${yy}-0041')`, /duplicate key/); ok('codes are unique')
+await as(T, `update members set code = 'CRDFH25-0007' where full_name = 'Old Card'`)
+assert.equal((await as(T, `select code from members where full_name = 'Old Card'`))[0].code, 'CRDFH25-0007'); ok('staff can fix a code')
 // 012: student price.
 await as(T, `update products set student_price = 900 where id = $1`, [mid])
 assert.equal((await one(`select new_value from product_changes where product_id = '${mid}' and field = 'student_price'`)).new_value, '900.00'); ok('staff set a student price, logged in history')

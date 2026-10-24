@@ -15,6 +15,7 @@ export const uuid = () =>
 // Money fields are text, not type=number: a mouse wheel over a number input silently changes the amount.
 export const moneyInput = (set) => (e) => /^\d*\.?\d{0,2}$/.test(e.target.value) && set(e.target.value)
 
-// Member numbers show as M0012; staff can type "M12", "m0012" or just "12".
-export const memberCode = (n) => 'M' + String(n).padStart(4, '0')
-export const parseMemberCode = (s) => (/^m?\d{1,9}$/i.test(s.trim()) ? Number(s.trim().replace(/^m/i, '')) : null)
+// Gym codes look like CRDFH26-0012 (26 = year registered). Typed codes are matched in capitals.
+export const parseMemberCode = (s) => (/^crdfh\d{2}-\d+$/i.test(s.trim()) ? s.trim().toUpperCase() : null)
+// CRDFH25-9 before CRDFH25-10 before CRDFH26-1.
+export const byCode = (a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })

@@ -7,13 +7,14 @@ import { downloadPayslips } from '../../lib/reports.js'
 import { payslipBytes, printBytes } from '../../lib/printReceipt.js'
 import { supabase } from '../../lib/supabase.js'
 import { money } from '../../lib/util.js'
-import { EMPTY_PRIOR, addToPrior, computePayslip, ratesOn, suggestedBasic } from '../../lib/payroll.js'
+import { EMPTY_PRIOR, LOANS, OTHERS, addToPrior, computePayslip, ratesOn, suggestedBasic } from '../../lib/payroll.js'
 import { fmtDateTime } from '../../components/ui.jsx'
 import { Notice, Problem, StatusPill, Submit, field } from '../../components/form.jsx'
 import { addDays } from '../../components/RangePicker.jsx'
 import { BASIS, FREQ, RUN_STATUS, employerCost, fmtDay, periodLabel } from './Payroll.jsx'
 
-const INPUTS = ['days_worked', 'hours_worked', 'basic_pay', 'overtime_pay', 'allowances_taxable', 'allowances_nontaxable', 'cash_advance', 'other_deductions']
+const TYPED = [...LOANS, ...OTHERS]
+const INPUTS = ['days_worked', 'hours_worked', 'basic_pay', 'overtime_pay', 'allowances_taxable', 'allowances_nontaxable', 'cash_advance', 'other_deductions', ...TYPED.map(([k]) => k)]
 const round2 = (n) => Math.round(n * 100) / 100
 const cell = 'tabular h-9 w-24 rounded-md bg-paper px-2 text-right ring-1 ring-ink/15 outline-none focus:ring-2 focus:ring-gold'
 const toInput = (v) => (v == null ? '' : String(Number(v)))
@@ -111,7 +112,7 @@ export default function PayRun() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const slips = useMemo(() => computeAll(priors), [items, draft, rates, priors, emps, advances])
   const total = (k) => slips.reduce((s, x) => s + (Number(x[k]) || 0), 0)
-  const eeDeductions = total('sss_ee') + total('philhealth_ee') + total('pagibig_ee') + total('withholding_tax') + total('cash_advance') + total('other_deductions')
+  const eeDeductions = total('sss_ee') + total('philhealth_ee') + total('pagibig_ee') + total('withholding_tax') + total('cash_advance') + total('other_deductions') + TYPED.reduce((t, [k]) => t + total(k), 0)
   const erContrib = total('sss_er') + total('sss_ec') + total('philhealth_er') + total('pagibig_er')
 
   const edit = (i, k, v) => {
@@ -140,7 +141,7 @@ export default function PayRun() {
       const out = { id: s.id, run_id: id, employee_id: s.employee_id, employee_name: s.employee_name, pay_basis: s.pay_basis, rate: s.rate, deductions_note: s.deductions_note?.trim() || null, advance_id: s.advance_id ?? null }
       out.days_worked = s.days_worked === '' ? null : Number(s.days_worked)
       out.hours_worked = s.hours_worked === '' ? null : Number(s.hours_worked)
-      for (const k of ['basic_pay', 'overtime_pay', 'allowances_taxable', 'allowances_nontaxable', 'cash_advance', 'other_deductions', 'gross_pay', 'sss_ee', 'sss_er', 'sss_ec', 'philhealth_ee', 'philhealth_er', 'pagibig_ee', 'pagibig_er', 'taxable_income', 'withholding_tax', 'net_pay'])
+      for (const k of ['basic_pay', 'overtime_pay', 'allowances_taxable', 'allowances_nontaxable', 'cash_advance', 'other_deductions', ...TYPED.map(([k]) => k), 'gross_pay', 'sss_ee', 'sss_er', 'sss_ec', 'philhealth_ee', 'philhealth_er', 'pagibig_ee', 'pagibig_er', 'taxable_income', 'withholding_tax', 'net_pay'])
         out[k] = Number(s[k]) || 0
       return out
     })
@@ -334,6 +335,11 @@ export default function PayRun() {
               <th scope="col" className="px-2 py-3 text-right font-bold">PhilHealth</th>
               <th scope="col" className="px-2 py-3 text-right font-bold">Pag-IBIG</th>
               <th scope="col" className="px-2 py-3 text-right font-bold">Tax</th>
+              {TYPED.map(([k, l]) => (
+                <th key={k} scope="col" className="px-2 py-3 text-right font-bold">
+                  {l}
+                </th>
+              ))}
               <th scope="col" className="px-2 py-3 text-right font-bold" title="Cash advance repayment">Cash adv.</th>
               <th scope="col" className="px-2 py-3 text-right font-bold">Other ded.</th>
               <th scope="col" className="px-4 py-3 text-right font-bold">Net pay</th>
@@ -388,6 +394,11 @@ export default function PayRun() {
                   <td className="tabular px-2 py-2.5 text-right">{money(s.philhealth_ee)}</td>
                   <td className="tabular px-2 py-2.5 text-right">{money(s.pagibig_ee)}</td>
                   <td className="tabular px-2 py-2.5 text-right">{money(s.withholding_tax)}</td>
+                  {TYPED.map(([k]) => (
+                    <td key={k} className="px-2 py-2.5 text-right">
+                      {inp(k)}
+                    </td>
+                  ))}
                   <td className="px-2 py-2.5 text-right">
                     {s.advance_id ? (
                       <>
@@ -405,7 +416,7 @@ export default function PayRun() {
             })}
             {!slips.length && (
               <tr>
-                <td colSpan={14} className="px-4 py-10 text-center text-smoke">
+                <td colSpan={14 + TYPED.length} className="px-4 py-10 text-center text-smoke">
                   Nobody in this run yet.
                 </td>
               </tr>
@@ -418,7 +429,7 @@ export default function PayRun() {
                   Totals
                 </th>
                 <td />
-                {['basic_pay', 'overtime_pay', 'allowances_taxable', 'allowances_nontaxable', 'gross_pay', 'sss_ee', 'philhealth_ee', 'pagibig_ee', 'withholding_tax', 'cash_advance', 'other_deductions'].map((k) => (
+                {['basic_pay', 'overtime_pay', 'allowances_taxable', 'allowances_nontaxable', 'gross_pay', 'sss_ee', 'philhealth_ee', 'pagibig_ee', 'withholding_tax', ...TYPED.map(([k]) => k), 'cash_advance', 'other_deductions'].map((k) => (
                   <td key={k} className="tabular px-2 py-3 text-right">
                     {money(total(k))}
                   </td>

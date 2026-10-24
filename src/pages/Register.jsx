@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { animate, createScope, svg } from 'animejs'
 import { CircleAlert, CircleCheck, GraduationCap, IdCard, Loader2, Minus, Plus, Search, ShoppingBag, Tag, UserRound, X } from 'lucide-react'
 import { supabase } from '../lib/supabase.js'
-import { manilaToday, memberCode, money, moneyInput, parseMemberCode, round2, uuid } from '../lib/util.js'
+import { manilaToday, money, moneyInput, parseMemberCode, round2, uuid } from '../lib/util.js'
 import { CountUp, EASE_OUT, stockOf } from '../components/ui.jsx'
 import { useAuth } from '../auth.jsx'
 import { printReceipt, saleReceipt, validUntil } from '../lib/printReceipt.js'
@@ -137,13 +137,13 @@ export default function Register() {
     if (hit) {
       add(hit)
       setQuery('')
-    } else if (/^m\d+$/.test(q)) {
+    } else if (parseMemberCode(q)) {
       // A member code (typed or scanned from their card): attach that member to the sale.
       findMember(parseMemberCode(q)).then((m) => {
         if (m) {
           setMember(m)
           setQuery('')
-        } else setError(`No member with code ${memberCode(parseMemberCode(q))}.`)
+        } else setError(`No member with code ${parseMemberCode(q)}.`)
       })
     }
   }
@@ -576,8 +576,8 @@ function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setT
   )
 }
 
-const MEMBER_COLS = 'id, member_no, full_name, phone, ends_on, member_until'
-const findMember = async (no) => (await supabase.from('v_members').select(MEMBER_COLS).eq('member_no', no).maybeSingle()).data
+const MEMBER_COLS = 'id, code, full_name, phone, ends_on, member_until'
+const findMember = async (code) => (await supabase.from('v_members').select(MEMBER_COLS).eq('code', code).maybeSingle()).data
 
 // Who a membership plan is for. Their new end date shows before charging, so staff can tell them.
 function MemberPick({ member, setMember, plans, hasPlans, onCancel }) {
@@ -587,10 +587,10 @@ function MemberPick({ member, setMember, plans, hasPlans, onCancel }) {
     const t = q.trim()
     if (!t) return setHits(null)
     let live = true
-    // A code (M0012, m12, 12) finds that member; anything else searches names.
+    // A code (CRDFH26-0012) finds that member; anything else searches names.
     const timer = setTimeout(async () => {
-      const no = parseMemberCode(t)
-      const rows = no ? [await findMember(no)].filter(Boolean) : (await supabase.from('v_members').select(MEMBER_COLS).ilike('full_name', `%${t}%`).order('full_name').limit(5)).data
+      const code = parseMemberCode(t)
+      const rows = code ? [await findMember(code)].filter(Boolean) : (await supabase.from('v_members').select(MEMBER_COLS).ilike('full_name', `%${t}%`).order('full_name').limit(5)).data
       if (live) setHits(rows ?? [])
     }, 200)
     return () => ((live = false), clearTimeout(timer))
@@ -611,7 +611,7 @@ function MemberPick({ member, setMember, plans, hasPlans, onCancel }) {
         <IdCard className="size-4 shrink-0 text-gold" aria-hidden="true" />
         <p className="min-w-0 flex-1 leading-tight">
           <span className="block truncate font-semibold text-paper">
-            {member.full_name} {member.member_no && <span className="tabular text-xs text-gold">{memberCode(member.member_no)}</span>}
+            {member.full_name} {member.code && <span className="tabular text-xs text-gold">{member.code}</span>}
           </span>
           <span className="block text-xs text-ash">
             {paidTo ? `Gym paid until ${fmtDay(paidTo, long)}` : member.ends_on ? `Gym ${member.ends_on >= today ? 'active until' : 'expired'} ${fmtDay(member.ends_on)}` : 'No gym plan yet'}
@@ -640,7 +640,7 @@ function MemberPick({ member, setMember, plans, hasPlans, onCancel }) {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && hits?.length && (e.preventDefault(), setMember(hits[0]))}
-            placeholder="Member code (M0012) or name"
+            placeholder="Member code (CRDFH26-0012) or name"
             className={`${darkField} mt-1 h-9 pl-9`}
           />
         </label>
@@ -656,7 +656,7 @@ function MemberPick({ member, setMember, plans, hasPlans, onCancel }) {
             <li key={m.id}>
               <button type="button" onClick={() => setMember(m)} className="press flex w-full justify-between gap-2 bg-ink-2 px-3 py-2 text-left hover:bg-paper/10">
                 <span className="truncate text-paper">{m.full_name}</span>
-                {m.member_no && <span className="tabular shrink-0 text-xs text-gold">{memberCode(m.member_no)}</span>}
+                {m.code && <span className="tabular shrink-0 text-xs text-gold">{m.code}</span>}
               </button>
             </li>
           ))}

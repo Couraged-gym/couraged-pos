@@ -3,7 +3,7 @@ import { NavLink, Route, Routes, useNavigate } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
 import { CircleAlert, EyeOff, Loader2, Plus, RefreshCw, Search, UserRoundPlus } from 'lucide-react'
 import { supabase } from '../lib/supabase.js'
-import { manilaToday, memberCode, money, parseMemberCode } from '../lib/util.js'
+import { byCode, manilaToday, money, parseMemberCode } from '../lib/util.js'
 import { fetchAll } from '../lib/reports.js'
 import { fmtDay } from '../components/RangePicker.jsx'
 import { Segmented, Sheet } from '../components/ui.jsx'
@@ -11,7 +11,7 @@ import { Notice, Problem, StatusPill, Submit, field, label } from '../components
 import { Drawer } from './Inventory.jsx'
 
 const daysLeft = (end) => Math.round((Date.parse(end) - Date.parse(manilaToday())) / 864e5)
-const missingPatch = (e) => (/schema cache|does not exist/i.test(e.message) ? 'The database is missing an update. In Supabase › SQL Editor, run supabase/009_members.sql, 011_member_codes.sql and 013_gym_rates.sql, then refresh this page.' : e.message)
+const missingPatch = (e) => (/schema cache|does not exist/i.test(e.message) ? 'The database is missing an update. In Supabase › SQL Editor, run supabase/009_members.sql, 011_member_codes.sql, 013_gym_rates.sql and 015_member_codes_payslip_lines.sql, then refresh this page.' : e.message)
 
 // Words first, colour second.
 export function standing(m) {
@@ -23,7 +23,7 @@ export function standing(m) {
 }
 
 // Renewing and first plans are sold on the register, so payment, receipt and reports stay in one place.
-const toRegister = (navigate, m) => navigate('/', { state: { member: { id: m.id, member_no: m.member_no, full_name: m.full_name, ends_on: m.ends_on ?? null, member_until: m.member_until ?? null } } })
+const toRegister = (navigate, m) => navigate('/', { state: { member: { id: m.id, code: m.code, full_name: m.full_name, ends_on: m.ends_on ?? null, member_until: m.member_until ?? null } } })
 
 const TABS = [
   ['Members', '/members'],
@@ -66,7 +66,7 @@ function MemberList() {
 
   const load = useCallback(async () => {
     try {
-      setAll(await fetchAll(() => supabase.from('v_members').select('*').order('full_name')))
+      setAll((await fetchAll(() => supabase.from('v_members').select('*').order('code'))).sort(byCode))
       setError(null)
     } catch (e) {
       setError(missingPatch(e))
@@ -79,8 +79,7 @@ function MemberList() {
   const count = (s) => (all ?? []).filter((m) => m.status === s).length
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase()
-    const no = parseMemberCode(t)
-    return (all ?? []).filter((m) => (tab === 'all' || m.status === tab) && (!t || m.full_name.toLowerCase().includes(t) || m.member_no === no || (m.phone ?? '').includes(t)))
+    return (all ?? []).filter((m) => (tab === 'all' || m.status === tab) && (!t || m.full_name.toLowerCase().includes(t) || m.code?.toLowerCase().includes(t) || (m.phone ?? '').includes(t)))
   }, [all, tab, q])
   const member = all?.find((m) => m.id === open)
 
@@ -130,7 +129,7 @@ function MemberList() {
               <li key={m.id} className="flex items-center gap-3 px-4 py-3 transition-colors duration-150 hover:bg-mist/60">
                 <button type="button" onClick={() => setOpen(m.id)} className="min-w-0 flex-1 text-left">
                   <span className="block truncate font-semibold">
-                    {m.full_name} {m.member_no && <span className="tabular ml-1 rounded bg-ink px-1.5 py-0.5 text-xs font-bold text-gold">{memberCode(m.member_no)}</span>}
+                    {m.code && <span className="tabular mr-1.5 rounded bg-ink px-1.5 py-0.5 text-xs font-bold text-gold">{m.code}</span>} {m.full_name}
                   </span>
                   <span className="block truncate text-sm text-smoke">{[m.member_until >= manilaToday() ? `Member until ${fmtDay(m.member_until)}` : 'Annual membership not paid', m.plan_name, m.phone].filter(Boolean).join(' · ')}</span>
                 </button>
@@ -247,7 +246,7 @@ function Plans() {
 
 function MemberSheet({ member, onClose, onSaved, onSell }) {
   const create = !member
-  const [f, setF] = useState({ full_name: member?.full_name ?? '', phone: member?.phone ?? '', notes: member?.notes ?? '' })
+  const [f, setF] = useState({ code: member?.code ?? '', full_name: member?.full_name ?? '', phone: member?.phone ?? '', notes: member?.notes ?? '' })
   const [busy, setBusy] = useState(null)
   const [err, setErr] = useState(null)
   const [periods, setPeriods] = useState(null)
@@ -264,25 +263,30 @@ function MemberSheet({ member, onClose, onSaved, onSell }) {
   }, [create, member?.id])
 
   const save = async (sell) => {
-    const c = { full_name: f.full_name.trim(), phone: f.phone.trim() || null, notes: f.notes.trim() || null }
+    const c = { code: f.code.trim().toUpperCase() || null, full_name: f.full_name.trim(), phone: f.phone.trim() || null, notes: f.notes.trim() || null }
     if (!c.full_name) return setErr('Enter their name.')
+    if (c.code && !parseMemberCode(c.code)) return setErr('Gym codes look like CRDFH26-0012. Leave it blank to give the next one.')
     setBusy(sell ? 'sell' : 'save')
     setErr(null)
-    const res = create ? await supabase.from('members').insert(c).select('id, member_no').single() : await supabase.from('members').update(c).eq('id', member.id)
+    const res = create ? await supabase.from('members').insert(c).select('id, code').single() : await supabase.from('members').update(c).eq('id', member.id)
     setBusy(null)
-    if (res.error) return setErr(missingPatch(res.error))
+    if (res.error) return setErr(res.error.code === '23505' ? `${c.code} is already someone else's code.` : missingPatch(res.error))
     if (sell) onSell({ ...member, ...c, ...(create && res.data) })
-    else onSaved(create ? `${c.full_name} registered as ${memberCode(res.data.member_no)}. Give them this code; they'll use it to pay and renew.` : `Saved ${c.full_name}.`)
+    else onSaved(create ? `${c.full_name} registered as ${res.data.code}. Give them this code; they'll use it to pay and renew.` : `Saved ${c.full_name}.`)
   }
 
   const [text, tone] = member ? standing(member) : []
   return (
     <Sheet
       title={create ? 'Register member' : member.full_name}
-      subtitle={create ? 'Their details. The plan is paid for on the register.' : <>{member.member_no && <b className="tabular mr-2 text-gold">{memberCode(member.member_no)}</b>}<StatusPill tone={tone}>{text}</StatusPill></>}
+      subtitle={create ? 'Their details. The plan is paid for on the register.' : <>{member.code && <b className="tabular mr-2 text-gold">{member.code}</b>}<StatusPill tone={tone}>{text}</StatusPill></>}
       onClose={onClose}
     >
       <form onSubmit={(e) => (e.preventDefault(), save(false))} className="space-y-4">
+        <label className={label}>
+          Gym code <span className="font-normal text-smoke">({create ? 'blank gives the next number' : 'change only to fix a typo'})</span>
+          <input value={f.code} onChange={set('code')} autoCapitalize="characters" placeholder={`CRDFH${manilaToday().slice(2, 4)}-0001`} className={`${field} tabular mt-1.5 uppercase`} />
+        </label>
         <label className={label}>
           Full name
           <input autoFocus={create} value={f.full_name} onChange={set('full_name')} className={`${field} mt-1.5`} />

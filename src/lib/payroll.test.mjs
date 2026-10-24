@@ -1,6 +1,6 @@
 // npm run test:payroll — worked examples for the payroll arithmetic (2025 rate seeds).
 import assert from 'node:assert/strict'
-import { EMPTY_PRIOR, addToPrior, computePayslip, pagibig, philhealth, ratesOn, sss, suggestedBasic, withholding } from './payroll.js'
+import { EMPTY_PRIOR, addToPrior, computePayslip, pagibig, philhealth, ratesOn, sss, totalDeductions, suggestedBasic, withholding } from './payroll.js'
 
 const rates = {
   sss: { ee_rate: 0.05, er_rate: 0.1, msc_min: 5000, msc_max: 35000, msc_step: 500, ec_low: 10, ec_high: 30, ec_threshold: 15000 },
@@ -86,6 +86,9 @@ const extras = computePayslip({ basic_pay: 10000, overtime_pay: 1000, allowances
 assert.equal(extras.gross_pay, 13500)
 assert.equal(extras.taxable_income, round(11500 - extras.sss_ee - extras.philhealth_ee - extras.pagibig_ee))
 assert.equal(extras.net_pay, round(13500 - extras.sss_ee - extras.philhealth_ee - extras.pagibig_ee - extras.withholding_tax - 300)); ok('overtime and taxable allowances are taxed; non-taxable allowances and deductions are not')
+const loans = computePayslip({ basic_pay: 40000, pagibig_loan: 100, sss_loan: 200, rice: 300, paraphernalia: 400, loan: 500 }, emp({ rate: 40000, pay_frequency: 'monthly' }), rates)
+assert.equal(loans.withholding_tax, m.withholding_tax); assert.equal(round(loans.net_pay), round(m.net_pay - 1500))
+assert.equal(totalDeductions(loans), round(m.gross_pay - loans.net_pay)); ok('loans, rice, paraphernalia come off net pay only, and are in the total deductions')
 
 const rows = [
   { kind: 'sss', effective_from: '2024-01-01', config: { v: 'old' } },

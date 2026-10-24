@@ -33,10 +33,11 @@ assert.ok(xl.includes('NOT AN OFFICIAL RECEIPT OR') || xl.some((l) => l.includes
 assert.ok(text(daySummaryBytes({ ...day, receipts: 0, gross: 0, discounts: 0, net: 0, first_no: null, payments: [], categories: [] })).includes('No sales')); ok('a day with no sales still prints')
 
 const run = { period_start: '2026-10-01', period_end: '2026-10-15', pay_date: '2026-10-15', status: 'finalized' }
-const slip = { employee_name: 'José Rizal', pay_basis: 'daily', rate: 650, days_worked: 10, basic_pay: 6500, overtime_pay: 0, allowances_taxable: 0, allowances_nontaxable: 0, gross_pay: 6500, sss_ee: 325, philhealth_ee: 250, pagibig_ee: 130, withholding_tax: 0, cash_advance: 500, advance_balance: 1500, other_deductions: 0, net_pay: 5295 }
+const slip = { employee_name: 'José Rizal', pay_basis: 'daily', rate: 650, days_worked: 10, basic_pay: 6500, overtime_pay: 0, allowances_taxable: 0, allowances_nontaxable: 0, gross_pay: 6500, sss_ee: 325, philhealth_ee: 250, pagibig_ee: 130, withholding_tax: 0, cash_advance: 500, rice: 200, sss_loan: 100, advance_balance: 1500, other_deductions: 0, net_pay: 4995 }
 const pl = text(payslipBytes(slip, run)).split('\n')
 assert.ok(pl.every((l) => l.length <= 32) && pl.some((l) => l.startsWith('Employee') && l.endsWith('Jose Rizal'))); ok('payslip fits 32 characters, accents dropped')
-assert.ok(pl.some((l) => l.startsWith('Cash advance') && l.endsWith('P500')) && pl.some((l) => l.includes('Balance left') && l.endsWith('P1,500'))); ok('payslip shows the cash advance and the balance left')
-assert.ok(pl.some((l) => l.startsWith('Total deductions') && l.endsWith('P1,205')) && !pl.some((l) => l.startsWith('Overtime'))); ok('total deductions add up; zero lines are left out')
+assert.ok(pl.some((l) => l.trim().startsWith('Cash advance') && l.endsWith('P500')) && pl.some((l) => l.includes('Balance left') && l.endsWith('P1,500'))); ok('payslip shows the cash advance and the balance left')
+assert.ok(pl.some((l) => l.startsWith('Total deductions') && l.endsWith('P1,505')) && !pl.some((l) => l.startsWith('Overtime'))); ok('total deductions add up; zero lines are left out')
+assert.ok(['SSS loan', 'Pag-IBIG loan', 'OTHERS', '  Rice', '  Paraphernalia', '  Loan', 'Salary'].every((k) => pl.some((l) => l.startsWith(k)))); ok('payslip lists loans, then others (rice, paraphernalia, loan, cash advance)')
 assert.ok(text(payslipBytes(slip, { ...run, status: 'draft' })).includes('*** DRAFT - NOT FINAL ***')); ok('draft payslips are marked')
 console.log('all passed')
