@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Ban, CircleAlert, Loader2, Printer, Search } from 'lucide-react'
+import { Ban, CircleAlert, Loader2, Package, Printer, Search } from 'lucide-react'
 import { supabase } from '../lib/supabase.js'
 import { money } from '../lib/util.js'
 import { EASE_OUT, Sheet, fmtDateTime } from '../components/ui.jsx'
@@ -23,6 +23,9 @@ export default function Sales() {
   const [method, setMethod] = useState('')
   const [status, setStatus] = useState('')
   const [staff, setStaff] = useState('')
+  const [itemTyped, setItemTyped] = useState('')
+  const [item, setItem] = useState('')
+  const [products, setProducts] = useState([])
   const [people, setPeople] = useState([])
   const [rows, setRows] = useState(null)
   const [count, setCount] = useState(0)
@@ -39,7 +42,18 @@ export default function Sales() {
       .select('id, full_name')
       .order('full_name')
       .then(({ data }) => setPeople(data ?? []))
+    // Item names for the dropdown. Finance can't read products; they get names from the report below.
+    supabase
+      .from('products')
+      .select('name')
+      .is('deleted_at', null)
+      .order('name')
+      .then(({ data }) => setProducts((data ?? []).map((p) => p.name)))
   }, [])
+  useEffect(() => {
+    const t = setTimeout(() => setItem(itemTyped.trim()), 300)
+    return () => clearTimeout(t)
+  }, [itemTyped])
   useEffect(() => {
     const t = setTimeout(() => setSearch(typed.trim().replace(/^#/, '')), 300)
     return () => clearTimeout(t)
@@ -50,7 +64,7 @@ export default function Sales() {
     (offset) => {
       let q = supabase
         .from('sales')
-        .select('id, sale_no, sold_at, payment_method, payment_ref, subtotal, discount, total, amount_tendered, change_due, customer_name, note, status, voided_at, voided_by, void_reason, staff_id, sale_items(product_name, qty, unit_price, line_total)', { count: 'exact' })
+        .select('id, sale_no, sold_at, payment_method, payment_ref, subtotal, discount, total, amount_tendered, change_due, customer_name, note, status, voided_at, voided_by, void_reason, staff_id, sale_items(product_name, qty, unit_price, line_total)' + (item ? ', hit:sale_items!inner(product_name)' : ''), { count: 'exact' })
         .order('sold_at', { ascending: false })
         .range(offset, offset + PAGE - 1)
       // A receipt number finds that receipt whatever the date range.
@@ -60,9 +74,10 @@ export default function Sales() {
       if (method) q = q.eq('payment_method', method)
       if (status) q = q.eq('status', status)
       if (staff) q = q.eq('staff_id', staff)
+      if (item) q = q.ilike('hit.product_name', `%${item}%`) // receipts with that item on them
       return q
     },
-    [range.from, range.to, search, byReceipt, method, status, staff],
+    [range.from, range.to, search, byReceipt, method, status, staff, item],
   )
 
   const reload = useCallback(async () => {
@@ -116,7 +131,8 @@ export default function Sales() {
   const names = Object.fromEntries(people.map((p) => [p.id, p.full_name]))
   const open = rows?.find((r) => r.id === openId)
   const pay = (keys) => (summary?.payments ?? []).filter((p) => keys.includes(p.method)).reduce((s, p) => s + Number(p.total), 0)
-  const filtered = method || status || staff || search
+  const filtered = method || status || staff || search || item
+  const itemNames = [...new Set([...products, ...(summary?.products ?? []).map((p) => p.name)])].sort((a, b) => a.localeCompare(b))
 
   return (
     <main className="mx-auto max-w-[90rem] px-4 py-6 sm:px-6 lg:px-10">
@@ -163,6 +179,16 @@ export default function Sales() {
           <span className="sr-only">Search receipt number or customer</span>
           <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-smoke" aria-hidden="true" />
           <input type="search" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Receipt # or customer" className="h-11 w-full rounded-lg bg-paper pr-3 pl-10 ring-1 ring-ink/10 outline-none placeholder:text-smoke focus:ring-2 focus:ring-gold" />
+        </label>
+        <label className="relative block lg:w-60">
+          <span className="sr-only">Item</span>
+          <Package className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-smoke" aria-hidden="true" />
+          <input type="search" list="sales-items" value={itemTyped} onChange={(e) => setItemTyped(e.target.value)} disabled={byReceipt} placeholder="Item, e.g. Gatorade" className="h-11 w-full rounded-lg bg-paper pr-3 pl-10 ring-1 ring-ink/10 outline-none placeholder:text-smoke focus:ring-2 focus:ring-gold disabled:opacity-50" />
+          <datalist id="sales-items">
+            {itemNames.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
         </label>
         <div className={`grid ${isAdmin ? 'grid-cols-3' : 'grid-cols-2'} gap-2 lg:flex`}>
           <label>
