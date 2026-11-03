@@ -15,7 +15,7 @@ const dayStart = (d) => `${d}T00:00:00+08:00` // Manila midnight
 const select = 'h-11 rounded-lg bg-paper px-3 text-sm font-semibold ring-1 ring-ink/10 outline-none focus:ring-2 focus:ring-gold'
 
 export default function Sales() {
-  const { isAdmin, profile } = useAuth() // staff only see their own receipts (sales read policy)
+  const { isAdmin: canVoid, isBooks: isAdmin, profile } = useAuth() // staff only see their own receipts (sales read policy); finance sees all but can't void
   const opts = useMemo(presets, [])
   const [range, setRange] = useState({ key: 'today', from: opts[0][2], to: opts[0][3] })
   const [typed, setTyped] = useState('')
@@ -123,7 +123,7 @@ export default function Sales() {
       <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div>
           <h1 className="font-display text-5xl font-black uppercase leading-none">Sales</h1>
-          <p className="mt-1 text-smoke">{isAdmin ? 'Every receipt, who rang it up and how it was paid. Open one to void it.' : 'Receipts you rang up.'}</p>
+          <p className="mt-1 text-smoke">{isAdmin ? `Every receipt, who rang it up and how it was paid.${canVoid ? ' Open one to void it.' : ''}` : 'Receipts you rang up.'}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => printReceipt(testReceipt())} className="press flex h-11 items-center gap-2 rounded-lg px-4 font-semibold ring-1 ring-ink/15">
@@ -248,7 +248,7 @@ export default function Sales() {
         </button>
       )}
 
-      <AnimatePresence>{open && <ReceiptSheet key="sheet" r={open} names={names} canVoid={isAdmin} onClose={() => setOpenId(null)} onVoided={reload} />}</AnimatePresence>
+      <AnimatePresence>{open && <ReceiptSheet key="sheet" r={open} names={names} canVoid={canVoid} onClose={() => setOpenId(null)} onVoided={reload} />}</AnimatePresence>
     </main>
   )
 }
@@ -296,7 +296,7 @@ function SaleRow({ r, who, onOpen }) {
   )
 }
 
-function ReceiptSheet({ r, names, canVoid, onClose, onVoided }) {
+export function ReceiptSheet({ r, names, canVoid, onClose, onVoided }) {
   const voided = r.status === 'voided'
   const cash = r.payment_method === 'cash'
   const [reason, setReason] = useState('')

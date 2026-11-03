@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { NavLink, Route, Routes } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
 import { Bar, BarChart, CartesianGrid, LabelList, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { ArrowDownRight, ArrowUpRight, CircleAlert, Download, FileSpreadsheet, FileText, Loader2, Minus } from 'lucide-react'
+import { ArrowDownRight, ArrowUpRight, CircleAlert, Download, FileSpreadsheet, FileText, Loader2, Minus, Search } from 'lucide-react'
 import { supabase } from '../lib/supabase.js'
 import { money } from '../lib/util.js'
 import RangePicker, { addDays, fmtDay, monthStart, presets } from '../components/RangePicker.jsx'
@@ -10,6 +10,9 @@ import { CountUp, EASE_OUT, Sheet } from '../components/ui.jsx'
 import { useAuth } from '../auth.jsx'
 import { downloadSalesReport, reportPeriods } from '../lib/reports.js'
 import ExportSheet from './SalesExport.jsx'
+import { ReceiptSheet } from './Sales.jsx'
+import { fetchAll } from '../lib/reports.js'
+import { fmtDateTime } from '../components/ui.jsx'
 
 // Validated (dataviz validator, light surface): cost/profit pair passes CVD + contrast. Same values as the marketing dashboard.
 // Gold = profit and crimson = money out on every chart; sales lines are blue. The trio is validated too.
@@ -41,6 +44,7 @@ const TABS = [
   ['Merchandise', '/analytics/merchandise'],
   ['Memberships', '/analytics/memberships'],
   ['Staff', '/analytics/staff'],
+  ['Item search', '/analytics/items'],
 ]
 
 export default function Analytics() {
@@ -110,6 +114,7 @@ export default function Analytics() {
             <Route path="merchandise" element={<Merchandise r={report} />} />
             <Route path="memberships" element={<Memberships r={report} />} />
             <Route path="staff" element={<Staff r={report} />} />
+            <Route path="items" element={<ItemSearch r={report} range={range} />} />
           </Routes>
         </div>
       )}
@@ -745,5 +750,84 @@ function Staff({ r }) {
         </Panel>
       </div>
     </>
+  )
+}
+
+// Pick an item sold in the range (type to filter the list) and see every receipt it was on.
+const SALE_COLS = 'id, sale_no, sold_at, payment_method, payment_ref, subtotal, discount, total, amount_tendered, change_due, customer_name, note, status, voided_at, voided_by, void_reason, staff_id, sale_items(product_name, qty, unit_price, line_total), hit:sale_items!inner(product_id, qty, line_total)'
+const manila = (d) => `${d}T00:00:00+08:00`
+function ItemSearch({ r, range }) {
+  const items = useMemo(() => [...r.products].sort((a, b) => a.name.localeCompare(b.name)), [r.products])
+  const [typed, setTyped] = useState('')
+  const [rows, setRows] = useState(null)
+  const [err, setErr] = useState(null)
+  const [names, setNames] = useState({})
+  const [open, setOpen] = useState(null)
+  const pick = items.find((x) => `${x.name} · ${x.category}` === typed || x.name === typed)
+
+  useEffect(() => {
+    supabase.from('profiles').select('id, full_name').then(({ data }) => setNames(Object.fromEntries((data ?? []).map((p) => [p.id, p.full_name]))))
+  }, [])
+  useEffect(() => {
+    if (!pick) return setRows(null)
+    let live = true
+    setErr(null)
+    fetchAll(() => supabase.from('sales').select(SALE_COLS).eq('hit.product_id', pick.product_id).gte('sold_at', manila(range.from)).lt('sold_at', manila(addDays(range.to, 1))).order('sold_at', { ascending: false }))
+      .then((d) => live && setRows(d))
+      .catch((e) => live && setErr(e.message))
+    return () => (live = false)
+  }, [pick?.product_id, range.from, range.to]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const done = (rows ?? []).filter((x) => x.status !== 'voided')
+  const qty = done.reduce((t, x) => t + x.hit.reduce((u, h) => u + num(h.qty), 0), 0)
+  const sales = done.reduce((t, x) => t + x.hit.reduce((u, h) => u + num(h.line_total), 0), 0)
+  return (
+    <Panel title="Receipts by item" note="Items sold in the selected dates" className="mt-6">
+      <label className="relative block max-w-md">
+        <span className="sr-only">Item</span>
+        <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-smoke" aria-hidden="true" />
+        <input list="item-search-list" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={items.length ? 'Type or pick an item' : 'Nothing sold in these dates'} className="h-11 w-full rounded-lg bg-paper pr-3 pl-10 ring-1 ring-ink/15 outline-none focus:ring-2 focus:ring-gold" />
+        <datalist id="item-search-list">
+          {items.map((x) => (
+            <option key={x.product_id} value={`${x.name} · ${x.category}`} />
+          ))}
+        </datalist>
+      </label>
+      {err && <p role="alert" className="mt-3 text-sm font-semibold text-crimson">Couldn't load receipts. {err}</p>}
+      {pick && !rows && !err && <Loader2 className="mt-4 size-5 animate-spin text-smoke" aria-label="Loading receipts" />}
+      {pick && rows && (
+        <>
+          <p className="tabular mt-4 text-sm text-smoke">
+            <b className="text-ink">{pick.name}</b>: {rows.length} receipt{rows.length === 1 ? '' : 's'}, {qty.toLocaleString('en-PH')} sold, {money(sales)}
+            {rows.length > done.length && ` (${rows.length - done.length} voided, not counted)`}
+          </p>
+          <ul className="mt-3 divide-y divide-ink/5">
+            {rows.map((x) => {
+              const voided = x.status === 'voided'
+              return (
+                <li key={x.id}>
+                  <button type="button" onClick={() => setOpen(x)} className="group flex w-full items-center gap-3 py-2.5 text-left">
+                    <span className="min-w-0 flex-1">
+                      <span className="tabular font-semibold group-hover:underline group-hover:decoration-gold group-hover:decoration-2 group-hover:underline-offset-4">#{String(x.sale_no).padStart(5, '0')}</span>
+                      <span className="tabular block truncate text-xs text-smoke">
+                        {fmtDateTime(x.sold_at)} · {names[x.staff_id] ?? 'Unknown'}
+                        {x.customer_name && ` · ${x.customer_name}`}
+                      </span>
+                    </span>
+                    <span className="tabular shrink-0 text-right text-sm">
+                      <span className={voided ? 'text-smoke line-through' : 'font-semibold'}>
+                        {x.hit.reduce((u, h) => u + num(h.qty), 0)} × · {money(x.hit.reduce((u, h) => u + num(h.line_total), 0))}
+                      </span>
+                      <span className="block text-xs text-smoke">{voided ? 'Voided' : `receipt ${money(x.total)}`}</span>
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </>
+      )}
+      <AnimatePresence>{open && <ReceiptSheet key="r" r={open} names={names} canVoid={false} onClose={() => setOpen(null)} onVoided={() => {}} />}</AnimatePresence>
+    </Panel>
   )
 }

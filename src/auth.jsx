@@ -32,6 +32,8 @@ export function AuthProvider({ children }) {
     session,
     profile,
     isAdmin: profile?.role === 'admin',
+    // Admin or the bookkeeper's finance login: expenses, vouchers, payroll, sales and reports.
+    isBooks: profile?.role === 'admin' || profile?.role === 'finance',
     signOut: () => supabase.auth.signOut(),
   }
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>

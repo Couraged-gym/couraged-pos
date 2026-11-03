@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase.js'
 import { manilaToday, money, moneyInput, uuid } from '../lib/util.js'
 import { EASE_OUT, Segmented, Sheet, fmtDateTime } from '../components/ui.jsx'
 import { addDays } from '../components/RangePicker.jsx'
+import Vouchers from './Vouchers.jsx'
 
 const field = 'h-11 w-full rounded-lg bg-paper px-3 ring-1 ring-ink/15 outline-none transition-shadow duration-150 placeholder:text-smoke/70 focus:ring-2 focus:ring-gold disabled:bg-mist disabled:text-smoke'
 const label = 'block text-sm font-semibold'
@@ -264,6 +265,8 @@ export default function Expenses() {
           </table>
         )}
       </div>
+
+      <Vouchers month={month} />
 
       <AnimatePresence>
         {open?.kind === 'expense' && (open.id ? editing : true) && (

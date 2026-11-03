@@ -57,10 +57,12 @@ function footer(doc, by) {
   const n = doc.getNumberOfPages()
   for (let i = 1; i <= n; i++) {
     doc.setPage(i)
-    doc.setDrawColor(...LINE).setLineWidth(0.2).line(M, 285, W - M, 285)
+    const pw = doc.internal.pageSize.getWidth()
+    const ph = doc.internal.pageSize.getHeight()
+    doc.setDrawColor(...LINE).setLineWidth(0.2).line(M, ph - 12, pw - M, ph - 12)
     doc.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(...SMOKE)
-    doc.text(plain(`CourageD POS  |  Generated ${stamp()}${by ? ` by ${by}` : ''}  |  Amounts in Philippine pesos (PHP)`), M, 290)
-    doc.text(`Page ${i} of ${n}`, W - M, 290, { align: 'right' })
+    doc.text(plain(`CourageD POS  |  Generated ${stamp()}${by ? ` by ${by}` : ''}  |  Amounts in Philippine pesos (PHP)`), M, ph - 7)
+    doc.text(`Page ${i} of ${n}`, pw - M, ph - 7, { align: 'right' })
   }
 }
 
@@ -278,25 +280,20 @@ export function salesReportPdf({ r, stock = null, label, expenses = [], payroll 
 // Payslips for one pay run: a summary page, then one payslip per employee.
 // ---------------------------------------------------------------------------------
 export function payslipsPdf({ run, items, employees = [], logo, by }) {
-  const doc = newDoc()
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' })
+  doc.setFont('helvetica', 'normal').setLineHeightFactor(1.25)
+  transmittal(doc, { run, items, employees, by })
+  doc.addPage('a4', 'portrait')
   const period = `${day(run.period_start, { month: 'short', day: 'numeric' })} - ${day(run.period_end)}`
   const byId = Object.fromEntries(employees.map((e) => [e.id, e]))
   const sum = (k) => items.reduce((s, it) => s + num(it[k]), 0)
   const er = sum('sss_er') + sum('sss_ec') + sum('philhealth_er') + sum('pagibig_er')
   const draft = run.status !== 'finalized'
-  const rest = (it) => totalDeductions(it) - num(it.sss_ee) - num(it.philhealth_ee) - num(it.pagibig_ee) - num(it.withholding_tax)
 
   let y = header(doc, { logo, title: `Payroll summary${draft ? ' (not final)' : ''}`, period })
   doc.setFont('helvetica', 'normal').setFontSize(9).setTextColor(...SMOKE)
   doc.text(plain(`Pay date ${day(run.pay_date)}. ${items.length} payslip${items.length === 1 ? '' : 's'}. Status: ${run.status}.`), M, y)
   y += 8
-  y = section(doc, y, 'Payslips', 'PHP')
-  y = table(doc, y, {
-    head: ['Employee', 'Gross', 'SSS', 'PhilHealth', 'Pag-IBIG', 'Tax', 'Loans & others', 'Net pay'],
-    body: items.map((it) => [it.employee_name, amt(it.gross_pay), amt(it.sss_ee), amt(it.philhealth_ee), amt(it.pagibig_ee), amt(it.withholding_tax), amt(rest(it)), amt(it.net_pay)]),
-    foot: ['Total', amt(sum('gross_pay')), amt(sum('sss_ee')), amt(sum('philhealth_ee')), amt(sum('pagibig_ee')), amt(sum('withholding_tax')), amt(items.reduce((s, it) => s + rest(it), 0)), amt(sum('net_pay'))],
-    right: [1, 2, 3, 4, 5, 6, 7],
-  })
   y = section(doc, y, 'To remit', 'PHP')
   y = table(doc, y, {
     head: ['Agency', 'Employee share', 'Employer share', 'Total'],
@@ -342,8 +339,10 @@ export function payslipsPdf({ run, items, employees = [], logo, by }) {
     const earnings = [
       ['Basic pay' + (it.days_worked != null ? ` (${num(it.days_worked)} days)` : it.hours_worked != null ? ` (${num(it.hours_worked)} hrs)` : ''), amt(it.basic_pay)],
       ['Overtime', amt(it.overtime_pay)],
-      ['Allowances (taxable)', amt(it.allowances_taxable)],
-      ['Allowances (non-taxable)', amt(it.allowances_nontaxable)],
+      ['Holiday pay' + (num(it.holiday_days) ? ` (${num(it.holiday_days)} days)` : ''), amt(it.holiday_pay)],
+      ['Salary adjustment', amt(it.salary_adjustment)],
+      ['Allowance', amt(it.allowances_taxable)],
+      ...(num(it.allowances_nontaxable) ? [['Allowances (non-taxable)', amt(it.allowances_nontaxable)]] : []), // payslips from before patch 017
     ]
     const deductions = [
       ['SSS', amt(it.sss_ee)],
@@ -396,12 +395,191 @@ export function payslipsPdf({ run, items, employees = [], logo, by }) {
     // Mark every page so a draft is never mistaken for a final payslip.
     for (let i = 1; i <= doc.getNumberOfPages(); i++) {
       doc.setPage(i)
+      const pw = doc.internal.pageSize.getWidth()
       doc.setFillColor(...CRIMSON)
-      doc.roundedRect(W - M - 38, 19.5, 38, 7, 1.5, 1.5, 'F')
+      doc.roundedRect(pw - M - 38, 19.5, 38, 7, 1.5, 1.5, 'F')
       doc.setFont('helvetica', 'bold').setFontSize(8.5).setTextColor(255, 255, 255)
-      doc.text('DRAFT - NOT FINAL', W - M - 19, 24.2, { align: 'center' })
+      doc.text('DRAFT - NOT FINAL', pw - M - 19, 24.2, { align: 'center' })
     }
   }
   return doc
 }
 
+
+// ---------------------------------------------------------------------------------
+// Payroll transmittal, in the bookkeeper's format (landscape): one line per employee with
+// days, earnings, each deduction and the total paid, then payroll + lending = encashment.
+// ---------------------------------------------------------------------------------
+const longDay = (d) => day(d, { month: 'long', day: 'numeric', year: 'numeric' })
+export function coverage(run) {
+  const [a, b] = [run.period_start, run.period_end]
+  if (a.slice(0, 7) === b.slice(0, 7)) return `${day(a, { month: 'long' })} ${+a.slice(8)}-${+b.slice(8)}, ${a.slice(0, 4)}`
+  return `${day(a)} - ${day(b)}`
+}
+const slash = (d) => `${d.slice(5, 7)}/${d.slice(8, 10)}/${d.slice(0, 4)}`
+
+function transmittal(doc, { run, items, employees, by }) {
+  const pw = doc.internal.pageSize.getWidth()
+  const byId = Object.fromEntries(employees.map((e) => [e.id, e]))
+  const sum = (k) => items.reduce((t, it) => t + num(it[k]), 0)
+  doc.setFont('helvetica', 'bold').setFontSize(15).setTextColor(...INK)
+  doc.text('PAYROLL TRANSMITTAL', pw / 2, 16, { align: 'center' })
+  doc.setFontSize(11).text('COURAGED FITNESS HUB, INC.', pw / 2, 22, { align: 'center' })
+  doc.setFontSize(12).setTextColor(11, 107, 53).text(plain(coverage(run)), pw / 2, 28.5, { align: 'center' })
+
+  const cov = `${run.period_start.slice(5, 7)}/${+run.period_start.slice(8)}-${+run.period_end.slice(8)}/${run.period_end.slice(0, 4)}`
+  // [key, heading, always shown]
+  const money = [
+    ['basic_pay', 'Basic Pay', true],
+    ['holiday_pay', 'Holiday Pay', true],
+    ['overtime_pay', 'Overtime'],
+    ['salary_adjustment', 'Salary Adj.'],
+    ['allowances_taxable', 'Allowance'],
+    ['sss_ee', 'SSS Premium', true],
+    ['pagibig_ee', 'Pag-Ibig', true],
+    ['philhealth_ee', 'PHIC', true],
+    ['withholding_tax', 'W/Tax'],
+    ['pagibig_loan', 'Pag-Ibig Loan'],
+    ['sss_loan', 'SSS Loan'],
+    ['cash_bond', 'Cash Bond', true],
+    ['loan', 'Loan', true],
+    ['cash_advance', 'Cash Adv.'],
+    ['other_deductions', 'Other Deduction', true],
+    ['rice', 'Rice'],
+    ['paraphernalia', 'CRDK Paraphernalias', true],
+  ].filter(([k, , always]) => always || items.some((it) => num(it[k])))
+  const dash = (v) => (num(v) ? amt(v) : '-')
+  const days = (it) => (it.days_worked != null && it.days_worked !== '' ? num(it.days_worked).toFixed(2) : it.hours_worked != null && it.hours_worked !== '' ? `${num(it.hours_worked)} h` : '-')
+  const lead = 5 // Pay Date, Pay Coverage, Name, Department, Days
+  autoTable(doc, {
+    startY: 34,
+    head: [['Pay Date', 'Pay Coverage', 'Name', 'Department', 'No. of days duty', ...money.map(([, l]) => l), 'TOTAL']],
+    body: items.map((it) => [slash(run.pay_date), cov, plain(it.employee_name).toUpperCase(), plain(byId[it.employee_id]?.position ?? '').toUpperCase(), days(it), ...money.map(([k]) => dash(it[k])), amt(it.net_pay)]),
+    foot: [[{ content: 'GRAND TOTAL', colSpan: 4, styles: { halign: 'center' } }, items.reduce((t, it) => t + num(it.days_worked), 0).toFixed(2), ...money.map(([k]) => dash(sum(k))), amt(sum('net_pay'))]],
+    theme: 'grid',
+    margin: { left: 8, right: 8 },
+    styles: { font: 'helvetica', fontSize: 7, cellPadding: 1.2, textColor: INK, lineColor: [60, 60, 60], lineWidth: 0.15, valign: 'middle' },
+    headStyles: { fillColor: [255, 236, 64], textColor: INK, fontStyle: 'bold', halign: 'center', fontSize: 7 },
+    footStyles: { fillColor: [214, 236, 245], textColor: INK, fontStyle: 'bold' },
+    columnStyles: { 2: { cellWidth: 34 }, 3: { cellWidth: 26 } },
+    didParseCell: (d) => {
+      if (d.section !== 'head' && d.column.index >= lead - 1) d.cell.styles.halign = 'right'
+      if (d.column.index === lead + money.length) d.cell.styles.fontStyle = 'bold'
+    },
+  })
+  let y = doc.lastAutoTable.finalY + 10
+
+  // Signatures on the left, the encashment summary on the right.
+  const sig = (label, x, name) => {
+    doc.setFont('helvetica', 'normal').setFontSize(8.5).setTextColor(...SMOKE).text(label, x, y)
+    doc.setDrawColor(...INK).setLineWidth(0.3).line(x, y + 12, x + 55, y + 12)
+    if (name) doc.setFont('helvetica', 'bold').setTextColor(...INK).text(plain(name).toUpperCase(), x, y + 11)
+  }
+  sig('Prepared by:', 14, by)
+  sig('Checked by:', 80, null)
+  sig('Approved by:', 146, null)
+
+  const payroll = sum('net_pay')
+  const lending = sum('loan')
+  const x = pw - 80
+  doc.setFont('helvetica', 'bold').setFontSize(10).setTextColor(...INK).text('SUMMARY', x, y)
+  const line = (l, v, yy, bold) => {
+    doc.setFont('helvetica', bold ? 'bold' : 'normal').setFontSize(10).text(l, x, yy)
+    doc.text(amt(v), pw - 14, yy, { align: 'right' })
+  }
+  line('PAYROLL', payroll, y + 7)
+  line('LENDING', lending, y + 13)
+  doc.setDrawColor(...INK).setLineWidth(0.3).line(pw - 50, y + 15, pw - 14, y + 15)
+  line('TOTAL ENCASHMENT', payroll + lending, y + 20, true)
+  doc.setLineWidth(0.6).line(x, y + 22, pw - 14, y + 22)
+  doc.setFont('helvetica', 'normal').setFontSize(7.5).setTextColor(...SMOKE)
+  doc.text('Lending = the Loan column, paid out with the payroll check.', x, y + 27)
+}
+
+// "TWENTY ONE THOUSAND SIX HUNDRED FIFTY SIX PESO(S) & 25/100 ONLY", as written on vouchers and checks.
+const ONES = ['', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN', 'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN', 'EIGHTEEN', 'NINETEEN']
+const TENS = ['', '', 'TWENTY', 'THIRTY', 'FORTY', 'FIFTY', 'SIXTY', 'SEVENTY', 'EIGHTY', 'NINETY']
+function under1000(n) {
+  const h = Math.floor(n / 100)
+  const r = n % 100
+  return [h && `${ONES[h]} HUNDRED`, r < 20 ? ONES[r] : [TENS[Math.floor(r / 10)], ONES[r % 10]].filter(Boolean).join(' ')].filter(Boolean).join(' ')
+}
+export function amountInWords(v) {
+  const cents = Math.round(num(v) * 100)
+  let pesos = Math.floor(cents / 100)
+  const parts = []
+  for (const [size, name] of [[1e9, 'BILLION'], [1e6, 'MILLION'], [1e3, 'THOUSAND'], [1, '']]) {
+    const chunk = Math.floor(pesos / size)
+    pesos %= size
+    if (chunk) parts.push([under1000(chunk), name].filter(Boolean).join(' '))
+  }
+  return `${parts.join(' ') || 'ZERO'} PESO(S) & ${String(cents % 100).padStart(2, '0')}/100 ONLY`
+}
+
+// ---------------------------------------------------------------------------------
+// Check voucher / journal voucher, in the bookkeeper's layout. v = vouchers row.
+// ---------------------------------------------------------------------------------
+export function voucherPdf(v) {
+  const doc = newDoc()
+  const check = v.kind === 'check'
+  const lines = (v.lines ?? []).filter((l) => l.code || l.title || num(l.debit) || num(l.credit))
+  const grid = { theme: 'grid', margin: { left: M, right: M }, styles: { font: 'helvetica', fontSize: 9, cellPadding: 1.8, textColor: INK, lineColor: INK, lineWidth: 0.25 } }
+  const lab = (l, val) => ({ content: `${l}\n${plain(val ?? '')}`, styles: { fontSize: 9.5 } })
+
+  doc.setFont('helvetica', 'bold').setFontSize(13).setTextColor(...INK).text('COURAGED FITNESS HUB, INC.', M, 16)
+  doc.setFont('helvetica', 'normal').setFontSize(8.5).setTextColor(...SMOKE).text('3rd Floor CRD Bldg., Miñoza St., Talamban, Cebu City', M, 21)
+  doc.setFontSize(7.5).text(plain(`Printed ${stamp()}`), W - M, 12, { align: 'right' })
+  if (v.status === 'voided') {
+    doc.setFont('helvetica', 'bold').setFontSize(11).setTextColor(...CRIMSON).text(plain(`VOIDED: ${v.void_reason ?? ''}`), W - M, 21, { align: 'right' })
+  }
+
+  autoTable(doc, {
+    ...grid,
+    startY: 26,
+    head: [[{ content: check ? 'CHECK VOUCHER' : 'JOURNAL VOUCHER', colSpan: 3, styles: { halign: 'center', fontSize: 13, fontStyle: 'bold', fillColor: [255, 255, 255], textColor: INK } }]],
+    body: check
+      ? [
+          [{ ...lab('Payable to', v.payee), rowSpan: 2 }, lab('CV Number', v.voucher_no), lab('CV Date', longDay(v.voucher_date))],
+          [{ ...lab('Bank Name', v.bank), colSpan: 1 }, lab('Amount', amt(v.amount))],
+          [lab('References', v.reference), lab('Check Date', v.check_date ? longDay(v.check_date) : ''), lab('Check Number', v.check_no)],
+          [{ ...lab('Amount (in words)', amountInWords(v.amount)), colSpan: 3 }],
+        ]
+      : [
+          [lab('Reference', v.reference), lab('JV Number', v.voucher_no), lab('JV Date', longDay(v.voucher_date))],
+          [{ ...lab('Amount (in words)', amountInWords(v.amount)), colSpan: 2 }, lab('Amount', amt(v.amount))],
+        ],
+    columnStyles: { 0: { cellWidth: 92 } },
+  })
+  autoTable(doc, {
+    ...grid,
+    startY: doc.lastAutoTable.finalY,
+    head: [[{ content: 'EXPLANATION', styles: { halign: 'center', fontStyle: 'bold', fillColor: [255, 255, 255], textColor: INK } }]],
+    body: [[{ content: plain(v.explanation ?? ''), styles: { font: 'courier', fontSize: 9.5, minCellHeight: 60, valign: 'top' } }]],
+  })
+  const dr = lines.reduce((t, l) => t + num(l.debit), 0)
+  const cr = lines.reduce((t, l) => t + num(l.credit), 0)
+  autoTable(doc, {
+    ...grid,
+    startY: doc.lastAutoTable.finalY,
+    head: [['Account code', 'Account title', 'Debit', 'Credit']],
+    body: (lines.length ? lines : [{}]).map((l) => [plain(l.code ?? ''), plain(l.title ?? ''), num(l.debit) ? amt(l.debit) : '', num(l.credit) ? amt(l.credit) : '']),
+    foot: [[{ content: 'GRAND TOTAL', colSpan: 2, styles: { halign: 'center' } }, amt(dr), amt(cr)]],
+    headStyles: { fillColor: MIST, textColor: INK, fontStyle: 'bold' },
+    footStyles: { fillColor: [255, 255, 255], textColor: INK, fontStyle: 'bold' },
+    columnStyles: { 0: { cellWidth: 32 }, 2: { halign: 'right', cellWidth: 32 }, 3: { halign: 'right', cellWidth: 32 } },
+    didParseCell: (d) => d.section !== 'body' && d.column.index >= 2 && (d.cell.styles.halign = 'right'),
+  })
+  const who = [['Prepared by', v.prepared_by], ['Noted by', v.noted_by], ['Approved by', v.approved_by], ...(check ? [['Received by', v.received_by]] : [])]
+  autoTable(doc, {
+    ...grid,
+    startY: doc.lastAutoTable.finalY,
+    body: [who.map(([l, n]) => ({ content: `${l}:\n\n${plain(n ?? '').toUpperCase()}`, styles: { minCellHeight: 20, valign: 'top' } }))],
+  })
+  if (check) {
+    doc.setFont('helvetica', 'bold').setFontSize(9).setTextColor(...INK).text('NOTE: Do not release without OR.', M, doc.lastAutoTable.finalY + 6)
+  }
+  if (!check && lines.length && Math.round(dr * 100) !== Math.round(cr * 100)) {
+    doc.setFont('helvetica', 'bold').setFontSize(9).setTextColor(...CRIMSON).text(plain(`Debits and credits differ by ${amt(dr - cr)}.`), W - M, doc.lastAutoTable.finalY + 6, { align: 'right' })
+  }
+  return doc
+}

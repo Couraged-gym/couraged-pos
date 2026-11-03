@@ -48,25 +48,28 @@ function Gate() {
   return (
     <>
       <AnimatePresence>{(loading || !played) && <Splash key="splash" onDone={done} />}</AnimatePresence>
-      {!loading && (!session ? <Login /> : profile.role === 'staff' || profile.role === 'admin' ? <Shell /> : <NoAccess />)}
+      {!loading && (!session ? <Login /> : ['staff', 'admin', 'finance'].includes(profile.role) ? <Shell /> : <NoAccess />)}
     </>
   )
 }
 
-// [label, path, icon, adminOnly]
+// [label, path, icon, roles that see it]
+const FLOOR = ['staff', 'admin']
+const BOOKS = ['admin', 'finance']
 const NAV = [
-  ['Register', '/', ShoppingCart, false],
-  ['Members', '/members', IdCard, false],
-  ['Sales', '/sales', ReceiptText, false],
-  ['Inventory', '/inventory', Boxes, false],
-  ['Expenses', '/expenses', Wallet, true],
-  ['Payroll', '/payroll', Banknote, true],
-  ['Analytics', '/analytics', BarChart3, true],
-  ['Staff', '/staff', UsersRound, true],
+  ['Register', '/', ShoppingCart, FLOOR],
+  ['Members', '/members', IdCard, FLOOR],
+  ['Sales', '/sales', ReceiptText, ['staff', 'admin', 'finance']],
+  ['Inventory', '/inventory', Boxes, FLOOR],
+  ['Expenses', '/expenses', Wallet, BOOKS],
+  ['Payroll', '/payroll', Banknote, BOOKS],
+  ['Analytics', '/analytics', BarChart3, BOOKS],
+  ['Staff', '/staff', UsersRound, ['admin']],
 ]
 
 function Shell() {
-  const { profile, isAdmin, signOut } = useAuth()
+  const { profile, isAdmin, isBooks, signOut } = useAuth()
+  const floor = profile.role !== 'finance' // the bookkeeper's login has no register
   return (
     <div className="min-h-dvh">
       <header className="sticky top-0 z-20 flex h-14 items-center gap-3 bg-ink px-3 text-paper sm:px-4">
@@ -75,7 +78,7 @@ function Shell() {
           CourageD <span className="text-gold">POS</span>
         </span>
         <nav aria-label="Main" className="flex min-w-0 gap-1 overflow-x-auto sm:ml-4">
-          {NAV.filter((n) => isAdmin || !n[3]).map(([label, to, Icon]) => (
+          {NAV.filter((n) => n[3].includes(profile.role)).map(([label, to, Icon]) => (
             <NavLink key={to} to={to} end={to === '/'} className="relative flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold">
               {({ isActive }) => (
                 <>
@@ -100,14 +103,14 @@ function Shell() {
       </header>
       <Suspense fallback={null}>
         <Routes>
-        <Route path="/" element={<Register />} />
-        <Route path="/inventory" element={<Inventory />} />
-        <Route path="/members/*" element={<Members />} />
+        <Route path="/" element={floor ? <Register /> : <Expenses />} />
+        {floor && <Route path="/inventory" element={<Inventory />} />}
+        {floor && <Route path="/members/*" element={<Members />} />}
         <Route path="/sales" element={<Sales />} />
         {isAdmin && <Route path="/staff" element={<Staff />} />}
-        {isAdmin && <Route path="/expenses" element={<Expenses />} />}
-        {isAdmin && <Route path="/payroll/*" element={<Payroll />} />}
-        {isAdmin && <Route path="/analytics/*" element={<Analytics />} />}
+        {isBooks && <Route path="/expenses" element={<Expenses />} />}
+        {isBooks && <Route path="/payroll/*" element={<Payroll />} />}
+        {isBooks && <Route path="/analytics/*" element={<Analytics />} />}
         <Route path="*" element={<Soon title="Not found" />} />
       </Routes>
       </Suspense>

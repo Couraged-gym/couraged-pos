@@ -1,6 +1,6 @@
 // npm run test:pdf — builds both PDFs from small samples and checks the money formatting.
 import assert from 'node:assert/strict'
-import { amt, payslipsPdf, salesReportPdf } from './pdf.js'
+import { amountInWords, amt, coverage, payslipsPdf, salesReportPdf, voucherPdf } from './pdf.js'
 
 let n = 0
 const ok = (m) => console.log(`  ✓ ${++n} ${m}`)
@@ -29,5 +29,13 @@ assert.ok(withStock.output('arraybuffer').byteLength > 5000); ok('sales report b
 
 const items = [{ employee_id: 'a', employee_name: 'Coach Karl', pay_basis: 'monthly', rate: 20000, basic_pay: 10000, overtime_pay: 0, allowances_taxable: 0, allowances_nontaxable: 0, cash_advance: 500, advance_balance: 1500, other_deductions: 0, gross_pay: 10000, sss_ee: 500, sss_er: 1000, sss_ec: 10, philhealth_ee: 250, philhealth_er: 250, pagibig_ee: 200, pagibig_er: 200, taxable_income: 9050, withholding_tax: 0, net_pay: 8550 }]
 const slips = payslipsPdf({ run: { period_start: '2026-10-01', period_end: '2026-10-15', pay_date: '2026-10-15', status: 'draft' }, items })
-assert.equal(slips.getNumberOfPages(), 2); ok('payslips: a summary page plus one page per employee')
+assert.equal(slips.getNumberOfPages(), 3); ok('payslips: the payroll transmittal, a summary page, then one page per employee')
+assert.ok(slips.internal.pageSize.getWidth() > 200); ok('the transmittal page is landscape')
+assert.equal(coverage({ period_start: '2026-10-16', period_end: '2026-10-31' }), 'October 16-31, 2026'); ok('pay coverage reads like the transmittal: October 16-31, 2026')
+assert.equal(amountInWords(21656.25), 'TWENTY ONE THOUSAND SIX HUNDRED FIFTY SIX PESO(S) & 25/100 ONLY')
+assert.equal(amountInWords(1000000), 'ONE MILLION PESO(S) & 00/100 ONLY')
+assert.equal(amountInWords(0.5), 'ZERO PESO(S) & 50/100 ONLY'); ok('amount in words, as on the check voucher')
+const cv = voucherPdf({ kind: 'check', voucher_no: '2026100009', voucher_date: '2026-10-29', payee: 'Couraged Fitness Hub Employees', bank: 'MBTC-COURAGED', check_no: '1849257', check_date: '2026-10-30', reference: 'CFHI PAYROLL FTP 10/16-31/2026', amount: 21656.25, explanation: 'BUENO, FREDDIE - 4,547.75', lines: [{ code: '601-002-0001', title: 'Government remittances - SSS premium', debit: 190.25 }], prepared_by: 'Admin Manager' })
+const jv = voucherPdf({ kind: 'journal', voucher_no: 'JV-0001', voucher_date: '2026-10-31', amount: 500, lines: [{ code: '1', title: 'A', debit: 500 }, { code: '2', title: 'B', credit: 500 }] })
+assert.ok(cv.output('arraybuffer').byteLength > 3000 && jv.output('arraybuffer').byteLength > 3000); ok('check voucher and journal voucher PDFs build')
 console.log('all passed')

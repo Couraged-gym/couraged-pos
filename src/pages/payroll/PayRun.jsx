@@ -7,14 +7,15 @@ import { downloadPayslips } from '../../lib/reports.js'
 import { payslipBytes, printBytes } from '../../lib/printReceipt.js'
 import { supabase } from '../../lib/supabase.js'
 import { money } from '../../lib/util.js'
-import { EMPTY_PRIOR, LOANS, OTHERS, addToPrior, computePayslip, ratesOn, suggestedBasic } from '../../lib/payroll.js'
+import { EMPTY_PRIOR, LOANS, OTHERS, OVERRIDABLE, addToPrior, computePayslip, ratesOn, suggestedBasic, suggestedHoliday } from '../../lib/payroll.js'
 import { fmtDateTime } from '../../components/ui.jsx'
 import { Notice, Problem, StatusPill, Submit, field } from '../../components/form.jsx'
 import { addDays } from '../../components/RangePicker.jsx'
 import { BASIS, FREQ, RUN_STATUS, employerCost, fmtDay, periodLabel } from './Payroll.jsx'
 
 const TYPED = [...LOANS, ...OTHERS]
-const INPUTS = ['days_worked', 'hours_worked', 'basic_pay', 'overtime_pay', 'allowances_taxable', 'allowances_nontaxable', 'cash_advance', 'other_deductions', ...TYPED.map(([k]) => k)]
+const INPUTS = ['days_worked', 'hours_worked', 'basic_pay', 'overtime_pay', 'holiday_days', 'holiday_pay', 'salary_adjustment', 'allowances_taxable', 'cash_advance', 'other_deductions', ...TYPED.map(([k]) => k)]
+const MONEY_IN = ['basic_pay', 'overtime_pay', 'holiday_pay', 'salary_adjustment', 'allowances_taxable', 'cash_advance', 'other_deductions', ...TYPED.map(([k]) => k)]
 const round2 = (n) => Math.round(n * 100) / 100
 const cell = 'tabular h-9 w-24 rounded-md bg-paper px-2 text-right ring-1 ring-ink/15 outline-none focus:ring-2 focus:ring-gold'
 const toInput = (v) => (v == null ? '' : String(Number(v)))
@@ -57,7 +58,7 @@ export default function PayRun() {
     let filled = false
     setItems(
       it.data.map((x) => {
-        const row = { ...x, ...Object.fromEntries(INPUTS.map((k) => [k, toInput(x[k])])), deductions_note: x.deductions_note ?? '' }
+        const row = { ...x, ...Object.fromEntries(INPUTS.map((k) => [k, toInput(x[k])])), manual: Object.fromEntries(OVERRIDABLE.map(([k]) => [k, toInput(x.manual?.[k])])), deductions_note: x.deductions_note ?? '' }
         const a = owed[x.employee_id]
         if (r.data.status !== 'draft' || !a || x.advance_id) return row
         filled = true
@@ -124,6 +125,12 @@ export default function PayRun() {
         const next = { ...x, [k]: v }
         // Changing days or hours re-suggests basic pay; basic can still be overwritten after.
         if (k === 'days_worked' || k === 'hours_worked') next.basic_pay = String(suggestedBasic(byId[x.employee_id] ?? x, { days: next.days_worked, hours: next.hours_worked }))
+        // Holiday days suggest holiday pay the same way.
+        if (k === 'holiday_days') next.holiday_pay = v === '' ? '' : String(suggestedHoliday(byId[x.employee_id] ?? x, v))
+        if (k.startsWith('manual.')) {
+          delete next[k]
+          next.manual = { ...x.manual, [k.slice(7)]: v }
+        }
         return next
       }),
     )
@@ -141,7 +148,9 @@ export default function PayRun() {
       const out = { id: s.id, run_id: id, employee_id: s.employee_id, employee_name: s.employee_name, pay_basis: s.pay_basis, rate: s.rate, deductions_note: s.deductions_note?.trim() || null, advance_id: s.advance_id ?? null }
       out.days_worked = s.days_worked === '' ? null : Number(s.days_worked)
       out.hours_worked = s.hours_worked === '' ? null : Number(s.hours_worked)
-      for (const k of ['basic_pay', 'overtime_pay', 'allowances_taxable', 'allowances_nontaxable', 'cash_advance', 'other_deductions', ...TYPED.map(([k]) => k), 'gross_pay', 'sss_ee', 'sss_er', 'sss_ec', 'philhealth_ee', 'philhealth_er', 'pagibig_ee', 'pagibig_er', 'taxable_income', 'withholding_tax', 'net_pay'])
+      out.holiday_days = s.holiday_days === '' || s.holiday_days == null ? null : Number(s.holiday_days)
+      out.manual = s.manual ?? {}
+      for (const k of [...MONEY_IN, 'allowances_nontaxable', 'gross_pay', 'sss_ee', 'sss_er', 'sss_ec', 'philhealth_ee', 'philhealth_er', 'pagibig_ee', 'pagibig_er', 'taxable_income', 'withholding_tax', 'net_pay'])
         out[k] = Number(s[k]) || 0
       return out
     })
@@ -321,15 +330,16 @@ export default function PayRun() {
 
       <p className="mt-4 text-xs text-smoke xl:hidden">Swipe or scroll the table sideways to see every column.</p>
       <div className="mt-2 overflow-x-auto rounded-xl bg-paper ring-1 ring-ink/5 xl:mt-4">
-        <table className="w-full min-w-[78rem] text-left text-sm">
+        <table className="w-full min-w-[100rem] text-left text-sm">
           <thead className="border-b border-ink/8 text-xs font-bold uppercase tracking-[0.06em] text-smoke">
             <tr>
               <th scope="col" className="sticky left-0 z-10 bg-paper px-4 py-3 font-bold">Employee</th>
               <th scope="col" className="px-2 py-3 text-right font-bold">Days / hrs</th>
               <th scope="col" className="px-2 py-3 text-right font-bold">Basic</th>
               <th scope="col" className="px-2 py-3 text-right font-bold">Overtime</th>
-              <th scope="col" className="px-2 py-3 text-right font-bold" title="Taxable allowances">Allow. (tax)</th>
-              <th scope="col" className="px-2 py-3 text-right font-bold" title="Non-taxable allowances">Allow. (non-tax)</th>
+              <th scope="col" className="px-2 py-3 text-right font-bold" title="Holiday days, then holiday pay (suggested from the days)">Holiday days / pay</th>
+              <th scope="col" className="px-2 py-3 text-right font-bold" title="Salary adjustment: + back pay, − overpaid">Adjustment</th>
+              <th scope="col" className="px-2 py-3 text-right font-bold">Allowance</th>
               <th scope="col" className="px-2 py-3 text-right font-bold">Gross</th>
               <th scope="col" className="px-2 py-3 text-right font-bold">SSS</th>
               <th scope="col" className="px-2 py-3 text-right font-bold">PhilHealth</th>
@@ -351,10 +361,25 @@ export default function PayRun() {
               const unit = s.pay_basis === 'daily' ? 'days_worked' : s.pay_basis === 'hourly' ? 'hours_worked' : null
               const inp = (k, w) =>
                 draft ? (
-                  <input inputMode="decimal" aria-label={`${k.replace(/_/g, ' ')} for ${s.employee_name}`} value={items[i][k]} onChange={(e) => /^\d*\.?\d{0,2}$/.test(e.target.value) && edit(i, k, e.target.value)} className={`${cell} ${w ?? ''}`} />
+                  <input inputMode="decimal" aria-label={`${k.replace(/_/g, ' ')} for ${s.employee_name}`} value={items[i][k] ?? ''} onChange={(e) => (k === 'salary_adjustment' ? /^-?\d*\.?\d{0,2}$/ : /^\d*\.?\d{0,2}$/).test(e.target.value) && edit(i, k, e.target.value)} className={`${cell} ${w ?? ''}`} />
                 ) : (
                   money(s[k])
                 )
+              // Contributions and tax: the box shows the suggestion until something is typed over it; clearing it goes back to the suggestion.
+              const over = (k, l) => {
+                const typed = items[i].manual?.[k] ?? ''
+                return draft ? (
+                  <>
+                    <input inputMode="decimal" aria-label={`${l} for ${s.employee_name}`} value={typed} placeholder={String(s.suggested?.[k] ?? '')} onChange={(e) => /^\d*\.?\d{0,2}$/.test(e.target.value) && edit(i, `manual.${k}`, e.target.value)} className={`${cell} placeholder:text-ink/70 ${typed !== '' ? 'bg-gold/15 ring-gold' : ''}`} />
+                    {typed !== '' && Number(typed) !== s.suggested?.[k] && <span className="tabular mt-0.5 block text-xs text-smoke">suggested {money(s.suggested?.[k] ?? 0)}</span>}
+                  </>
+                ) : (
+                  <>
+                    {money(s[k])}
+                    {s.manual?.[k] != null && <span className="block text-xs text-smoke">typed</span>}
+                  </>
+                )
+              }
               return (
                 <tr key={s.id} className="align-top">
                   <td className="sticky left-0 z-10 bg-paper px-4 py-2.5">
@@ -387,13 +412,27 @@ export default function PayRun() {
                   <td className="px-2 py-2.5 text-right">{unit ? (draft ? inp(unit, 'w-16') : `${Number(s[unit] ?? 0)} ${unit === 'days_worked' ? 'd' : 'h'}`) : <span className="text-smoke">–</span>}</td>
                   <td className="px-2 py-2.5 text-right">{inp('basic_pay')}</td>
                   <td className="px-2 py-2.5 text-right">{inp('overtime_pay')}</td>
+                  <td className="px-2 py-2.5 text-right">
+                    {draft ? (
+                      <span className="flex justify-end gap-1">
+                        {inp('holiday_days', 'w-12')}
+                        {inp('holiday_pay')}
+                      </span>
+                    ) : (
+                      <>
+                        {money(s.holiday_pay)}
+                        {s.holiday_days != null && Number(s.holiday_days) > 0 && <span className="tabular block text-xs text-smoke">{Number(s.holiday_days)} d</span>}
+                      </>
+                    )}
+                  </td>
+                  <td className="px-2 py-2.5 text-right">{inp('salary_adjustment')}</td>
                   <td className="px-2 py-2.5 text-right">{inp('allowances_taxable')}</td>
-                  <td className="px-2 py-2.5 text-right">{inp('allowances_nontaxable')}</td>
                   <td className="tabular px-2 py-2.5 text-right font-semibold">{money(s.gross_pay)}</td>
-                  <td className="tabular px-2 py-2.5 text-right">{money(s.sss_ee)}</td>
-                  <td className="tabular px-2 py-2.5 text-right">{money(s.philhealth_ee)}</td>
-                  <td className="tabular px-2 py-2.5 text-right">{money(s.pagibig_ee)}</td>
-                  <td className="tabular px-2 py-2.5 text-right">{money(s.withholding_tax)}</td>
+                  {OVERRIDABLE.map(([k, l]) => (
+                    <td key={k} className="tabular px-2 py-2.5 text-right">
+                      {over(k, l)}
+                    </td>
+                  ))}
                   {TYPED.map(([k]) => (
                     <td key={k} className="px-2 py-2.5 text-right">
                       {inp(k)}
@@ -416,7 +455,7 @@ export default function PayRun() {
             })}
             {!slips.length && (
               <tr>
-                <td colSpan={14 + TYPED.length} className="px-4 py-10 text-center text-smoke">
+                <td colSpan={15 + TYPED.length} className="px-4 py-10 text-center text-smoke">
                   Nobody in this run yet.
                 </td>
               </tr>
@@ -429,7 +468,7 @@ export default function PayRun() {
                   Totals
                 </th>
                 <td />
-                {['basic_pay', 'overtime_pay', 'allowances_taxable', 'allowances_nontaxable', 'gross_pay', 'sss_ee', 'philhealth_ee', 'pagibig_ee', 'withholding_tax', ...TYPED.map(([k]) => k), 'cash_advance', 'other_deductions'].map((k) => (
+                {['basic_pay', 'overtime_pay', 'holiday_pay', 'salary_adjustment', 'allowances_taxable', 'gross_pay', 'sss_ee', 'philhealth_ee', 'pagibig_ee', 'withholding_tax', ...TYPED.map(([k]) => k), 'cash_advance', 'other_deductions'].map((k) => (
                   <td key={k} className="tabular px-2 py-3 text-right">
                     {money(total(k))}
                   </td>
@@ -455,7 +494,7 @@ export default function PayRun() {
         </label>
       )}
       <p className="mt-2 text-xs text-smoke">
-        SSS, PhilHealth, Pag-IBIG and tax are the employee's share, settled month-to-date: whatever was already deducted earlier this month is taken into account.
+        SSS, PhilHealth, Pag-IBIG and tax show the suggested employee share (settled month-to-date). Type over any of them to use your own figure; clear the box to go back to the suggestion. Holiday: type the days and the pay is suggested beside it.
       </p>
 
       <Remittance slips={slips} rates={run.rates ?? rates} />

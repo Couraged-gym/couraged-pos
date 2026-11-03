@@ -92,3 +92,17 @@ export async function downloadPayslips({ run, items, employees, by, print }) {
     win.location.href = doc.output('bloburl')
   } else doc.save(`CourageD-payroll_${run.period_start}_to_${run.period_end}${run.status === 'finalized' ? '' : '_DRAFT'}.pdf`)
 }
+
+// Check voucher or journal voucher as a PDF, opened with the print dialog.
+export async function printVoucher(v) {
+  const win = window.open('', '_blank') // before any await, or the popup blocker stops it
+  try {
+    const { voucherPdf } = await loadPdf()
+    const doc = voucherPdf(v)
+    doc.autoPrint()
+    win.location.href = doc.output('bloburl')
+  } catch (e) {
+    win?.close()
+    throw e
+  }
+}

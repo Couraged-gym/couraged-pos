@@ -4,7 +4,7 @@
 // Returns { status, json }.
 
 const fail = (status, error) => ({ status, json: { error } })
-const ROLES = ['staff', 'admin']
+const ROLES = ['staff', 'finance', 'admin']
 
 export async function handleStaff(admin, token, body = {}) {
   if (!token) return fail(401, 'Sign in again.')
@@ -21,7 +21,7 @@ export async function handleStaff(admin, token, body = {}) {
     const full_name = String(body.full_name ?? '').trim()
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail(400, 'Enter a valid email.')
     if (!full_name) return fail(400, 'Enter their name.')
-    if (!ROLES.includes(body.role)) return fail(400, 'Pick staff or admin.')
+    if (!ROLES.includes(body.role)) return fail(400, 'Pick staff, finance or admin.')
 
     // email_confirm: no confirmation email, they can sign in straight away.
     const { data: made, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { full_name } })

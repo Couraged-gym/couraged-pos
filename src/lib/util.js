@@ -19,3 +19,20 @@ export const moneyInput = (set) => (e) => /^\d*\.?\d{0,2}$/.test(e.target.value)
 export const parseMemberCode = (s) => (/^crdfh\d{2}-\d+$/i.test(s.trim()) ? s.trim().toUpperCase() : null)
 // CRDFH25-9 before CRDFH25-10 before CRDFH26-1.
 export const byCode = (a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })
+
+// Last day of a plan bought from `start` (YYYY-MM-DD). Lengths in 30s are calendar months and
+// 365s are years, so 1 month from Oct 27 runs to Nov 26 and renews Nov 27. Same rule as
+// public.plan_end() in supabase/017_finance_vouchers_payslip.sql.
+export function planEnd(start, days, qty = 1) {
+  const d = new Date(start + 'T00:00:00Z')
+  const months = days % 365 === 0 ? (days / 365) * 12 * qty : days % 30 === 0 ? (days / 30) * qty : null
+  if (months == null) d.setUTCDate(d.getUTCDate() + days * qty)
+  else {
+    const day = d.getUTCDate()
+    d.setUTCDate(1)
+    d.setUTCMonth(d.getUTCMonth() + months)
+    d.setUTCDate(Math.min(day, new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate())) // Jan 31 + 1 month = Feb 28, like Postgres
+  }
+  d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().slice(0, 10)
+}

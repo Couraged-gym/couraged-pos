@@ -202,6 +202,10 @@ await fails(A, `update payroll_rates set notes = 'x'`, /permission denied/); ok(
 // 009: members.
 const day = (n) => (n ? `(${`'${today}'`}::date + ${n})::text` : `'${today}'`)
 const dayOf = async (n) => (await one(`select ${day(n)} d`)).d
+// Plans run by calendar month/year (017): last day of `days` bought from `from`, and the renewal after it.
+const endOf = async (from, days) => (await one(`select public.plan_end('${from}'::date, ${days})::text d`)).d
+const M1 = await endOf(today, 30), M2 = await endOf(await dayOf0(M1), 30), Y1 = await endOf(today, 365), Y2 = await endOf(await dayOf0(Y1), 365)
+async function dayOf0(d) { return (await one(`select ('${d}'::date + 1)::text d`)).d }
 const mem = (await as(T, `insert into members (full_name, phone, created_by) values ('Juan Dela Cruz', '0917', $1) returning id`, [T]))[0].id; ok('staff registers a member')
 await fails(T, `delete from members where id = $1`, /permission denied/, [mem]); ok('members cannot be deleted')
 await as(T, `update products set duration_days = 30 where id = $1`, [mid])
@@ -209,21 +213,21 @@ const plan = JSON.stringify([{ product_id: mid, qty: 1 }])
 await fails(T, `select record_sale($1::jsonb)`, /Choose the member/, [plan]); ok('a plan with a length needs a member')
 const m1 = (await as(T, `select record_sale($1::jsonb, 'cash', 0, null, null, null, null, null, null, $2) as id`, [plan, mem]))[0].id
 let vm = (await as(T, `select status, ends_on::text as ends_on from v_members where id = $1`, [mem]))[0]
-assert.equal(vm.status, 'active'); assert.equal(vm.ends_on, await dayOf(29))
+assert.equal(vm.status, 'active'); assert.equal(vm.ends_on, M1)
 assert.equal((await one(`select customer_name from sales where id = '${m1}'`)).customer_name, 'Juan Dela Cruz'); ok('first plan: active today to +29 days, sale named after the member')
 const m2 = (await as(T, `select record_sale($1::jsonb, 'cash', 0, null, null, null, null, null, null, $2) as id`, [plan, mem]))[0].id
 vm = (await as(T, `select status, ends_on::text as ends_on from v_members where id = $1`, [mem]))[0]
-assert.equal(vm.ends_on, await dayOf(59)); ok('early renewal starts the day after the current end (+59)')
+assert.equal(vm.ends_on, M2); ok('early renewal starts the day after the current end (+59)')
 await as(A, `select void_sale($1, 'Paid twice')`, [m2])
 vm = (await as(T, `select status, ends_on::text as ends_on from v_members where id = $1`, [mem]))[0]
-assert.equal(vm.ends_on, await dayOf(29)); ok('voiding the renewal takes the days back off')
+assert.equal(vm.ends_on, M1); ok('voiding the renewal takes the days back off')
 await fails(T, `insert into member_periods (member_id, sale_id, product_id, plan_name, starts_on, ends_on) values ($1, $2, $3, 'x', current_date, current_date)`, /permission denied/, [mem, m1, mid]); ok('periods only come from a sale')
 const old = (await one(`insert into members (full_name) values ('Lapsed Lea') returning id`)).id
 await db.query(`insert into member_periods (member_id, sale_id, product_id, plan_name, starts_on, ends_on) values ($1, $2, $3, 'Monthly', ${day(-40)}::date, ${day(-11)}::date)`, [old, m1, mid])
 assert.equal((await as(T, `select status from v_members where id = $1`, [old]))[0].status, 'expired')
 await as(T, `select record_sale($1::jsonb, 'cash', 0, null, null, null, null, null, null, $2)`, [plan, old])
 vm = (await as(T, `select status, ends_on::text as ends_on from v_members where id = $1`, [old]))[0]
-assert.deepEqual([vm.status, vm.ends_on], ['active', await dayOf(29)]); ok('lapsed member renews from today, not from the old end date')
+assert.deepEqual([vm.status, vm.ends_on], ['active', M1]); ok('lapsed member renews from today, not from the old end date')
 await one(`insert into members (full_name) values ('New Nina')`)
 assert.equal((await as(T, `select status from v_members where full_name = 'New Nina'`))[0].status, 'new'); ok('registered without a plan shows as new')
 assert.equal((await as(X, `select * from members`)).length, (await one('select count(*)::int c from members')).c); ok('admins see members too')
@@ -252,12 +256,12 @@ await fails(T, `select record_sale($1::jsonb)`, /annual membership/, [JSON.strin
 await assert.rejects(sell13([{ product_id: dayM, qty: 1 }], mem), /annual membership/); ok('gym time alone does not get the member rate')
 await sell13([{ product_id: dayM, qty: 1 }, { product_id: annual, qty: 1 }], mem); ok('membership and member day pass in the same sale')
 vm = (await as(T, `select ends_on::text as ends_on, member_until::text as mu from v_members where id = $1`, [mem]))[0]
-assert.deepEqual([vm.ends_on, vm.mu], [await dayOf(29), await dayOf(364)]); ok('membership runs a year and leaves gym time alone')
+assert.deepEqual([vm.ends_on, vm.mu], [M1, Y1]); ok('membership runs a year and leaves gym time alone')
 await sell13([{ product_id: await rate('MONTH'), qty: 1 }], mem)
 vm = (await as(T, `select ends_on::text as ends_on, member_until::text as mu from v_members where id = $1`, [mem]))[0]
-assert.deepEqual([vm.ends_on, vm.mu], [await dayOf(59), await dayOf(364)]); ok('monthly extends gym time only')
+assert.deepEqual([vm.ends_on, vm.mu], [M2, Y1]); ok('monthly extends gym time only')
 await sell13([{ product_id: annual, qty: 1 }], mem)
-assert.equal((await as(T, `select member_until::text as mu from v_members where id = $1`, [mem]))[0].mu, await dayOf(729)); ok('early membership renewal adds a year from the end')
+assert.equal((await as(T, `select member_until::text as mu from v_members where id = $1`, [mem]))[0].mu, Y2); ok('early membership renewal adds a year from the end')
 // 016: annual membership paid before the POS.
 const pb = (await as(T, `insert into members (full_name, created_by) values ('Paid Before', $1) returning id`, [T]))[0].id
 await as(T, `select set_member_until($1, $2::date + 100)`, [pb, today])
@@ -265,7 +269,7 @@ await as(T, `select set_member_until($1, $2::date + 200)`, [pb, today])
 assert.equal((await as(T, `select member_until::text as mu from v_members where id = $1`, [pb]))[0].mu, await dayOf(200)); ok('staff set when a paid-before membership ends, editing replaces it')
 await sell13([{ product_id: dayM, qty: 1 }], pb); ok('paid-before members get the member rate')
 await sell13([{ product_id: annual, qty: 1 }], pb)
-assert.equal((await as(T, `select member_until::text as mu from v_members where id = $1`, [pb]))[0].mu, await dayOf(565)); ok('renewing adds a year from the paid-before end')
+assert.equal((await as(T, `select member_until::text as mu from v_members where id = $1`, [pb]))[0].mu, await endOf(await dayOf(201), 365)); ok('renewing adds a year from the paid-before end')
 await fails('00000000-0000-0000-0000-0000000000ff', `select set_member_until($1, null)`, /Only staff/, [pb]); ok('non-staff cannot set it')
 // 010: sales export.
 await fails(S, `select sales_export(current_date, current_date)`, /Only an admin/); ok('staff cannot export sales')
@@ -326,4 +330,28 @@ assert.equal(Math.round(st1.purchases * 100), Math.round(bought * 100)); ok(`inv
 await as(S, `insert into stock_movements (product_id, movement_type, qty, note, created_by) values ($1, 'spoilage', -1, 'Expired', $2)`, [p9, S])
 const st2 = await stock()
 assert.equal(Math.round((st2.losses - st1.losses) * 100), 3900); assert.equal(+st2.purchases, +st1.purchases); ok('one spoiled ₱39 item adds ₱39 to stock losses, not to purchases')
+// 017: finance role and vouchers.
+const F = '00000000-0000-0000-0000-0000000000f1'
+await db.exec(`insert into auth.users (id, email) values ('${F}', 'books@x'); update public.profiles set role = 'finance' where id = '${F}';`)
+assert.ok((await as(F, 'select * from expenses')).length > 0); ok('finance reads expenses')
+assert.ok((await as(F, 'select count(*)::int c from sales'))[0].c >= 3); ok('finance reads every sale')
+await as(F, `select sales_report($1::date - 6, $1::date)`, [today]); await as(F, `select stock_report($1::date - 6, $1::date)`, [today]); ok('finance opens the reports')
+await as(F, `insert into expenses (expense_date, category_id, description, amount) values ($1, $2, 'Bond paper', 250)`, [today, cat]); ok('finance records expenses')
+const frun = (await as(F, `insert into payroll_runs (pay_frequency, period_start, period_end, pay_date) values ('monthly', $1::date - 30, $1::date, $1::date) returning id`, [today]))[0].id
+await as(F, `insert into payroll_items (run_id, employee_id, employee_name, pay_basis, rate, basic_pay, holiday_pay, salary_adjustment, cash_bond, manual, gross_pay, net_pay) values ($1, $2, 'Coach Karl', 'monthly', 1, 5000, 400, -100, 250, '{"sss_ee": 280}', 5300, 4770)`, [frun, emp])
+await as(F, `select finalize_payroll($1, '{}')`, [frun]); ok('finance runs payroll with holiday pay, adjustment, cash bond and a typed SSS')
+await fails(F, 'select * from staff_list()', /Only an admin/); ok('finance cannot manage staff')
+await as(F, `update profiles set role = 'admin' where id = $1`, [F]).catch(() => {})
+assert.equal((await one(`select role from profiles where id = '${F}'`)).role, 'finance'); ok('finance cannot promote themselves')
+await fails(F, `select record_sale('[{"product_id":"${p9}","qty":1}]')`, /Not authorized/); ok('finance cannot ring up sales')
+await fails(F, `select delete_product($1)`, /Only an admin/, [p9]); ok('finance cannot delete products')
+const cv = `insert into vouchers (kind, voucher_no, voucher_date, payee, amount, lines) values ('check', '2026100009', $1, 'Couraged Fitness Hub Employees', 21656.25, '[{"code":"601-002-0001","title":"SSS premium","debit":190.25,"credit":0}]') returning id`
+const vid = (await as(F, cv, [today]))[0].id
+await fails(F, cv, /duplicate|unique/, [today]); ok('check voucher saved; its number cannot repeat')
+await fails(S, 'select * from vouchers', /./).catch(() => {}); assert.equal((await as(S, 'select * from vouchers')).length, 0); ok('staff cannot see vouchers')
+await fails(F, `delete from vouchers where id = $1`, /permission denied/, [vid])
+await as(F, `update vouchers set status = 'voided', void_reason = 'Spoiled check' where id = $1`, [vid])
+await as(F, `update vouchers set amount = 1 where id = $1`, [vid])
+assert.equal(+(await one(`select amount from vouchers where id = '${vid}'`)).amount, 21656.25); ok('vouchers are voided, never deleted, and lock once voided')
+assert.equal(await endOf('2026-10-27', 30), '2026-11-26'); assert.equal(await endOf('2026-01-31', 30), '2026-02-27'); assert.equal(await endOf('2026-10-27', 7), '2026-11-02'); ok('one month bought Oct 27 runs to Nov 26 and renews Nov 27')
 console.log('all passed')

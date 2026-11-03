@@ -40,8 +40,10 @@ export function withholding(taxable, c) {
 
 // Payslip deductions the admin types in, in payslip order: loans under the government lines, then "Others".
 export const LOANS = [['pagibig_loan', 'Pag-IBIG loan'], ['sss_loan', 'SSS loan']]
-export const OTHERS = [['rice', 'Rice'], ['paraphernalia', 'Paraphernalia'], ['loan', 'Loan']]
+export const OTHERS = [['rice', 'Rice'], ['cash_bond', 'Cash bond'], ['paraphernalia', 'Paraphernalia'], ['loan', 'Loan']]
 const TYPED = [...LOANS, ...OTHERS].map(([k]) => k)
+// Suggested by the app, typed over when the bookkeeper's figure differs. Overrides live in item.manual.
+export const OVERRIDABLE = [['sss_ee', 'SSS'], ['philhealth_ee', 'PhilHealth'], ['pagibig_ee', 'Pag-IBIG'], ['withholding_tax', 'Tax']]
 
 // Everything taken off one payslip.
 export const totalDeductions = (it) => round2(['sss_ee', 'philhealth_ee', 'pagibig_ee', 'withholding_tax', 'cash_advance', 'other_deductions', ...TYPED].reduce((t, k) => t + (Number(it[k]) || 0), 0))
@@ -56,11 +58,19 @@ export function suggestedBasic(emp, { days, hours } = {}) {
   return round2(rate / PERIODS_PER_MONTH[emp.pay_frequency])
 }
 
+// Suggested holiday pay: one extra day's pay per regular holiday worked (or paid while off).
+// ponytail: monthly staff use rate × 12 ÷ 313 (6-day week); special holidays at 30% get typed in.
+export function suggestedHoliday(emp, days) {
+  const rate = Number(emp.rate) || 0
+  const daily = emp.pay_basis === 'daily' ? rate : emp.pay_basis === 'hourly' ? rate * 8 : (rate * 12) / 313
+  return round2(daily * (Number(days) || 0))
+}
+
 export const EMPTY_PRIOR = { comp: 0, basic: 0, taxable: 0, sss_ee: 0, sss_er: 0, sss_ec: 0, philhealth_ee: 0, philhealth_er: 0, pagibig_ee: 0, pagibig_er: 0, withholding_tax: 0 }
 
 // Adds a finalized payslip into the month-to-date totals used as `prior`.
 export function addToPrior(prior, it) {
-  const comp = Number(it.basic_pay) + Number(it.overtime_pay) + Number(it.allowances_taxable)
+  const comp = Number(it.gross_pay) - (Number(it.allowances_nontaxable) || 0) // non-taxable allowances only on payslips from before patch 017
   const out = { ...prior, comp: prior.comp + comp, basic: prior.basic + Number(it.basic_pay), taxable: prior.taxable + Number(it.taxable_income) }
   for (const k of ['sss_ee', 'sss_er', 'sss_ec', 'philhealth_ee', 'philhealth_er', 'pagibig_ee', 'pagibig_er', 'withholding_tax']) out[k] = prior[k] + Number(it[k])
   return out
@@ -72,12 +82,14 @@ export function computePayslip(inp, emp, rates, prior = EMPTY_PRIOR) {
   const n = (v) => round2(Number(v) || 0)
   const basic = n(inp.basic_pay)
   const ot = n(inp.overtime_pay)
+  const holiday = n(inp.holiday_pay)
+  const adj = n(inp.salary_adjustment) // + back pay, − overpaid last time
   const allowT = n(inp.allowances_taxable)
-  const allowN = n(inp.allowances_nontaxable)
   const other = n(inp.other_deductions)
   const adv = n(inp.cash_advance) // cash advance repayment: owed money, so it isn't taxed or contributed on
-  const comp = round2(basic + ot + allowT) // compensation subject to contributions and tax
-  const gross = round2(comp + allowN)
+  const comp = round2(basic + ot + holiday + adj + allowT) // compensation subject to contributions and tax
+  const gross = comp
+  const manual = Object.fromEntries(Object.entries(inp.manual ?? {}).filter(([, v]) => v !== '' && v != null).map(([k, v]) => [k, n(v)]))
 
   let s = { ee: 0, er: 0, ec: 0 }
   let ph = { ee: 0, er: 0 }
@@ -91,16 +103,26 @@ export function computePayslip(inp, emp, rates, prior = EMPTY_PRIOR) {
     const G = pagibig(prior.comp + comp, rates.pagibig)
     pi = { ee: due(G.ee, prior.pagibig_ee), er: due(G.er, prior.pagibig_er) }
   }
+  const suggested = { sss_ee: s.ee, philhealth_ee: ph.ee, pagibig_ee: pi.ee }
+  // Employee shares typed over the suggestion win; employer shares stay as computed.
+  s.ee = manual.sss_ee ?? s.ee
+  ph.ee = manual.philhealth_ee ?? ph.ee
+  pi.ee = manual.pagibig_ee ?? pi.ee
   const taxable = Math.max(0, round2(comp - s.ee - ph.ee - pi.ee))
-  const tax = emp.minimum_wage_earner ? 0 : Math.max(0, round2(withholding(prior.taxable + taxable, rates.tax) - prior.withholding_tax))
+  suggested.withholding_tax = emp.minimum_wage_earner ? 0 : Math.max(0, round2(withholding(prior.taxable + taxable, rates.tax) - prior.withholding_tax))
+  const tax = manual.withholding_tax ?? suggested.withholding_tax
   const typed = Object.fromEntries(TYPED.map((k) => [k, n(inp[k])]))
   const net = round2(gross - s.ee - ph.ee - pi.ee - tax - other - adv - Object.values(typed).reduce((a, b) => a + b, 0))
 
   return {
     basic_pay: basic,
     overtime_pay: ot,
+    holiday_pay: holiday,
+    salary_adjustment: adj,
     allowances_taxable: allowT,
-    allowances_nontaxable: allowN,
+    allowances_nontaxable: 0,
+    manual,
+    suggested, // not stored: what the boxes show when nothing is typed
     other_deductions: other,
     cash_advance: adv,
     ...typed,

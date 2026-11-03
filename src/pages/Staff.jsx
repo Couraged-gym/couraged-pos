@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { CircleAlert, CircleCheck, Copy, Crown, KeyRound, Loader2, Plus, ShieldOff, UserRound, Wand2 } from 'lucide-react'
+import { Calculator, CircleAlert, CircleCheck, Copy, Crown, KeyRound, Loader2, Plus, ShieldOff, UserRound, Wand2 } from 'lucide-react'
 import { supabase } from '../lib/supabase.js'
 import { useAuth } from '../auth.jsx'
 import { EASE_OUT, Segmented, Sheet, fmtDateTime } from '../components/ui.jsx'
@@ -9,6 +9,7 @@ const field = 'h-11 w-full rounded-lg bg-paper px-3 ring-1 ring-ink/15 outline-n
 const ROLE = {
   admin: ['Admin', Crown, 'bg-gold/25 text-[#6B4E00]', 'Everything: register, inventory, sales, analytics and staff.'],
   staff: ['Staff', UserRound, 'bg-ink/8 text-ink', 'Register and inventory only. No sales history or analytics.'],
+  finance: ['Finance', Calculator, 'bg-[#2F6FB0]/12 text-[#1D4E80]', 'For the bookkeeper: sales, expenses and vouchers, payroll and analytics. No register, inventory or staff.'],
   inactive: ['Inactive', ShieldOff, 'bg-mist text-smoke ring-1 ring-ink/10', 'Can’t sign in to anything. Past sales stay in the records.'],
 }
 
@@ -79,10 +80,10 @@ export default function Staff() {
         </button>
       </header>
 
-      <dl className="mt-6 grid grid-cols-3 overflow-hidden rounded-xl bg-paper ring-1 ring-ink/5">
-        {['admin', 'staff', 'inactive'].map((r) => (
+      <dl className="mt-6 grid grid-cols-2 overflow-hidden sm:grid-cols-4 rounded-xl bg-paper ring-1 ring-ink/5">
+        {['admin', 'finance', 'staff', 'inactive'].map((r) => (
           <div key={r} className="border-ink/8 p-5 not-last:border-r">
-            <dt className="flex items-center gap-2 text-sm font-semibold text-smoke">{{ admin: 'Admins', staff: 'Staff', inactive: 'Inactive' }[r]}</dt>
+            <dt className="flex items-center gap-2 text-sm font-semibold text-smoke">{{ admin: 'Admins', finance: 'Finance', staff: 'Staff', inactive: 'Inactive' }[r]}</dt>
             <dd className="tabular mt-2 font-display text-4xl font-black leading-none">{people ? (counts[r] ?? 0) : '–'}</dd>
             <dd className="mt-1.5 text-xs text-smoke max-sm:hidden">{ROLE[r][3]}</dd>
           </div>
@@ -261,7 +262,7 @@ function AddSheet({ onClose, onDone }) {
           <PasswordField value={f.password} onChange={set('password')} />
           <div>
             <p className="text-sm font-semibold">Access</p>
-            <Segmented id="add-role" className="mt-1.5" value={f.role} onChange={set('role')} options={[['staff', 'Staff', UserRound], ['admin', 'Admin', Crown]]} />
+            <Segmented id="add-role" className="mt-1.5" value={f.role} onChange={set('role')} options={[['staff', 'Staff', UserRound], ['finance', 'Finance', Calculator], ['admin', 'Admin', Crown]]} />
             <p className="mt-1.5 text-sm text-smoke">{ROLE[f.role][3]}</p>
           </div>
           {err && <Problem>{err}</Problem>}
@@ -332,7 +333,7 @@ function EditSheet({ person, isMe, onClose, onDone }) {
             </p>
           ) : (
             <>
-              <Segmented id="edit-role" className="mt-1.5" value={role} onChange={setRole} options={[['staff', 'Staff', UserRound], ['admin', 'Admin', Crown], ['inactive', 'Inactive', ShieldOff]]} />
+              <Segmented id="edit-role" className="mt-1.5" value={role} onChange={setRole} options={[['staff', 'Staff', UserRound], ['finance', 'Finance', Calculator], ['admin', 'Admin', Crown], ['inactive', 'Inactive', ShieldOff]]} />
               <p className="mt-1.5 text-sm text-smoke">{ROLE[role][3]}</p>
             </>
           )}

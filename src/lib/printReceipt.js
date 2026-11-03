@@ -146,8 +146,10 @@ export function payslipBytes(it, run, { position, paperWidth = RECEIPT.paperWidt
     bold('EARNINGS\n'),
     row('Basic pay', peso(it.basic_pay)),
     opt('Overtime', it.overtime_pay),
-    opt('Allowances (taxable)', it.allowances_taxable),
-    opt('Allowances (non-taxable)', it.allowances_nontaxable),
+    opt('Holiday pay' + (Number(it.holiday_days) ? ` (${Number(it.holiday_days)} d)` : ''), it.holiday_pay),
+    opt('Salary adjustment', it.salary_adjustment),
+    opt('Allowance', it.allowances_taxable),
+    opt('Allowances (non-taxable)', it.allowances_nontaxable), // payslips from before patch 017
     bold(row('Salary', peso(it.gross_pay))),
     hr,
     bold('LESS: DEDUCTIONS\n'),

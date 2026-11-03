@@ -123,19 +123,40 @@ function MemberList() {
       {all && shown.length === 0 && (
         <p className="mt-16 text-center text-smoke">{q ? `No member matches "${q}".` : tab === 'active' ? 'No active members yet.' : tab === 'expired' ? 'Nobody has lapsed.' : 'No members yet. Register the first one.'}</p>
       )}
+      {shown.length > 0 && tab === 'expired' && (
+        <p className="mt-4 hidden grid-cols-[1fr_9rem_9rem_7.5rem] gap-3 px-4 text-xs font-bold uppercase tracking-[0.08em] text-smoke sm:grid" aria-hidden="true">
+          <span>Member</span>
+          <span>Monthly expiry</span>
+          <span>Annual expiry</span>
+        </p>
+      )}
       {shown.length > 0 && (
-        <ul className="mt-4 divide-y divide-ink/5 overflow-hidden rounded-xl bg-paper ring-1 ring-ink/5">
+        <ul className={`${tab === 'expired' ? 'mt-2' : 'mt-4'} divide-y divide-ink/5 overflow-hidden rounded-xl bg-paper ring-1 ring-ink/5`}>
           {shown.map((m) => {
             const [text, tone] = standing(m)
+            const today = manilaToday()
+            // [label, date, tone] for one expiry column on the Expired tab.
+            const expiry = (l, d) => [l, d ? fmtDay(d, { month: 'short', day: 'numeric', year: 'numeric' }) : 'None', !d ? 'text-smoke' : d < today ? 'text-crimson' : 'text-[#0B6B35]']
             return (
               <li key={m.id} className="flex items-center gap-3 px-4 py-3 transition-colors duration-150 hover:bg-mist/60">
                 <button type="button" onClick={() => setOpen(m.id)} className="min-w-0 flex-1 text-left">
                   <span className="block truncate font-semibold">
                     {m.code && <span className="tabular mr-1.5 rounded bg-ink px-1.5 py-0.5 text-xs font-bold text-gold">{m.code}</span>} {m.full_name}
                   </span>
-                  <span className="block truncate text-sm text-smoke">{[m.member_until >= manilaToday() ? `Member until ${fmtDay(m.member_until)}` : 'Annual membership not paid', m.plan_name, m.phone].filter(Boolean).join(' · ')}</span>
+                  <span className="block truncate text-sm text-smoke">
+                    {[tab !== 'expired' && (m.ends_on ? `Monthly ${m.ends_on >= today ? 'expires' : 'expired'} ${fmtDay(m.ends_on, { month: 'short', day: 'numeric', year: 'numeric' })}` : 'No monthly plan'), m.plan_name, m.phone].filter(Boolean).join(' · ')}
+                  </span>
                 </button>
-                <StatusPill tone={tone}>{text}</StatusPill>
+                {tab === 'expired' ? (
+                  [expiry('Monthly', m.ends_on), expiry('Annual', m.member_until)].map(([l, d, c]) => (
+                    <span key={l} className="tabular w-24 shrink-0 text-sm font-semibold sm:w-36">
+                      <span className="block text-xs font-normal text-smoke sm:sr-only">{l}</span>
+                      <span className={c}>{d}</span>
+                    </span>
+                  ))
+                ) : (
+                  <StatusPill tone={tone}>{text}</StatusPill>
+                )}
                 <button type="button" onClick={() => toRegister(navigate, m)} className="press flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold ring-1 ring-ink/15">
                   <RefreshCw className="size-4" aria-hidden="true" /> <span className="max-sm:sr-only">{m.status === 'new' ? 'Sell plan' : 'Renew'}</span>
                 </button>

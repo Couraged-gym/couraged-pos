@@ -1,6 +1,6 @@
 // npm run test:payroll — worked examples for the payroll arithmetic (2025 rate seeds).
 import assert from 'node:assert/strict'
-import { EMPTY_PRIOR, addToPrior, computePayslip, pagibig, philhealth, ratesOn, sss, totalDeductions, suggestedBasic, withholding } from './payroll.js'
+import { EMPTY_PRIOR, addToPrior, computePayslip, pagibig, philhealth, ratesOn, sss, totalDeductions, suggestedBasic, suggestedHoliday, withholding } from './payroll.js'
 
 const rates = {
   sss: { ee_rate: 0.05, er_rate: 0.1, msc_min: 5000, msc_max: 35000, msc_step: 500, ec_low: 10, ec_high: 30, ec_threshold: 15000 },
@@ -82,11 +82,21 @@ assert.equal(round(adv.net_pay), round(m.net_pay - 1000)); ok('a ₱1,000 cash a
 const contractor = computePayslip({ basic_pay: 10000 }, emp({ contributions_enabled: false }), rates)
 assert.equal(contractor.sss_ee + contractor.philhealth_ee + contractor.pagibig_ee, 0); ok('contributions can be switched off per person')
 
-const extras = computePayslip({ basic_pay: 10000, overtime_pay: 1000, allowances_taxable: 500, allowances_nontaxable: 2000, other_deductions: 300 }, emp({ pay_frequency: 'monthly' }), rates)
-assert.equal(extras.gross_pay, 13500)
-assert.equal(extras.taxable_income, round(11500 - extras.sss_ee - extras.philhealth_ee - extras.pagibig_ee))
-assert.equal(extras.net_pay, round(13500 - extras.sss_ee - extras.philhealth_ee - extras.pagibig_ee - extras.withholding_tax - 300)); ok('overtime and taxable allowances are taxed; non-taxable allowances and deductions are not')
-const loans = computePayslip({ basic_pay: 40000, pagibig_loan: 100, sss_loan: 200, rice: 300, paraphernalia: 400, loan: 500 }, emp({ rate: 40000, pay_frequency: 'monthly' }), rates)
+const extras = computePayslip({ basic_pay: 10000, overtime_pay: 1000, holiday_pay: 400, salary_adjustment: -100, allowances_taxable: 500, allowances_nontaxable: 2000, other_deductions: 300 }, emp({ pay_frequency: 'monthly' }), rates)
+assert.equal(extras.gross_pay, 11800); assert.equal(extras.allowances_nontaxable, 0)
+assert.equal(extras.taxable_income, round(11800 - extras.sss_ee - extras.philhealth_ee - extras.pagibig_ee))
+assert.equal(extras.net_pay, round(11800 - extras.sss_ee - extras.philhealth_ee - extras.pagibig_ee - extras.withholding_tax - 300)); ok('overtime, holiday pay, salary adjustment (+/−) and allowances are taxed; non-taxable allowances are gone')
+assert.equal(suggestedHoliday(emp({ pay_basis: 'daily', rate: 610 }), 2), 1220)
+assert.equal(suggestedHoliday(emp({ rate: 15650 }), 1), 600); ok('holiday pay suggested at the daily rate (monthly: × 12 ÷ 313)')
+
+// Transmittal Oct 16–31: Bueno, SSS typed as 280, Pag-IBIG 100, PHIC 125, cash bond 250, loan 3,500 → 4,547.75.
+const bueno = computePayslip({ basic_pay: 8802.75, cash_bond: 250, loan: 3500, manual: { sss_ee: '280', pagibig_ee: '100', philhealth_ee: '125', withholding_tax: '0' } }, emp({ pay_basis: 'daily', rate: 582 }), rates)
+assert.deepEqual([bueno.sss_ee, bueno.pagibig_ee, bueno.philhealth_ee, bueno.withholding_tax, bueno.net_pay], [280, 100, 125, 0, 4547.75])
+assert.ok(bueno.suggested.sss_ee > 0 && bueno.suggested.sss_ee !== 280); assert.equal(bueno.sss_er, sss(8802.75, rates.sss).er)
+const blank = computePayslip({ basic_pay: 8802.75, manual: { sss_ee: '' } }, emp({ pay_basis: 'daily', rate: 582 }), rates)
+assert.equal(blank.sss_ee, blank.suggested.sss_ee); ok('typed SSS / Pag-IBIG / PhilHealth / tax win over the suggestion; blank means suggested; employer share unchanged')
+assert.equal(addToPrior(EMPTY_PRIOR, extras).comp, 11800); ok('month-to-date pay includes holiday pay and adjustments')
+const loans = computePayslip({ basic_pay: 40000, pagibig_loan: 100, sss_loan: 200, rice: 300, paraphernalia: 400, loan: 400, cash_bond: 100 }, emp({ rate: 40000, pay_frequency: 'monthly' }), rates)
 assert.equal(loans.withholding_tax, m.withholding_tax); assert.equal(round(loans.net_pay), round(m.net_pay - 1500))
 assert.equal(totalDeductions(loans), round(m.gross_pay - loans.net_pay)); ok('loans, rice, paraphernalia come off net pay only, and are in the total deductions')
 

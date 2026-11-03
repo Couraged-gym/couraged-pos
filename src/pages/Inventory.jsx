@@ -554,7 +554,7 @@ function DetailsTab({ product, kind, categories, onDone, onDeleted }) {
         <label className={label}>
           Membership length in days
           <input inputMode="numeric" value={f.duration_days} onChange={intInput(set('duration_days'))} placeholder="Not a plan" className={`${field} tabular mt-1.5 w-32`} />
-          <span className="mt-1.5 block text-sm font-normal text-smoke">For plans tracked per member: 30 for a month, 365 for a year. Selling one then asks who it's for and adds the days to their membership. Leave blank for walk-ins and other services.</span>
+          <span className="mt-1.5 block text-sm font-normal text-smoke">For plans tracked per member: 30 per month (90 = 3 months), 365 per year. These count by the calendar: one month bought Oct 27 runs to Nov 26 and renews Nov 27. Other numbers count as days. Leave blank for walk-ins and other services.</span>
         </label>
       )}
       {f.kind === 'service' && (

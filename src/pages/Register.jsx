@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { animate, createScope, svg } from 'animejs'
 import { CircleAlert, CircleCheck, GraduationCap, IdCard, Loader2, Minus, Plus, Search, ShoppingBag, Tag, UserRound, X } from 'lucide-react'
 import { supabase } from '../lib/supabase.js'
-import { manilaToday, money, moneyInput, parseMemberCode, round2, uuid } from '../lib/util.js'
+import { manilaToday, money, moneyInput, parseMemberCode, planEnd, round2, uuid } from '../lib/util.js'
 import { CountUp, EASE_OUT, stockOf } from '../components/ui.jsx'
 import { useAuth } from '../auth.jsx'
 import { printReceipt, saleReceipt, validUntil } from '../lib/printReceipt.js'
@@ -599,9 +599,10 @@ function MemberPick({ member, setMember, plans, hasPlans, onCancel }) {
   if (member) {
     const today = manilaToday()
     // Gym time and the annual membership run separately (patch 013).
+    // Each plan starts the day after the last one ends; months and years go by the calendar (planEnd).
     const until = (end, ls) => {
-      const days = ls.reduce((s, l) => s + (l.duration_days ?? 0) * l.qty, 0)
-      return days ? addDays(end && end >= today ? addDays(end, 1) : today, days - 1) : null
+      const paid = ls.filter((l) => l.duration_days)
+      return paid.length ? paid.reduce((e, l) => planEnd(e && e >= today ? addDays(e, 1) : today, l.duration_days, l.qty), end) : null
     }
     const paidTo = until(member.ends_on, plans.filter((l) => !l.is_membership))
     const memberTo = until(member.member_until, plans.filter((l) => l.is_membership)) ?? member.member_until
