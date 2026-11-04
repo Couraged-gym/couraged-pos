@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { animate, createScope, svg } from 'animejs'
 import { CircleAlert, CircleCheck, GraduationCap, IdCard, Loader2, Minus, Plus, Search, ShoppingBag, Tag, UserRound, X } from 'lucide-react'
 import { supabase } from '../lib/supabase.js'
-import { manilaToday, money, moneyInput, parseMemberCode, planEnd, round2, uuid } from '../lib/util.js'
+import { manilaToday, money, moneyInput, parseMemberCode, parsePassToken, planEnd, round2, uuid } from '../lib/util.js'
 import { CountUp, EASE_OUT, stockOf } from '../components/ui.jsx'
 import { useAuth } from '../auth.jsx'
 import { printReceipt, saleReceipt, validUntil } from '../lib/printReceipt.js'
@@ -137,13 +137,13 @@ export default function Register() {
     if (hit) {
       add(hit)
       setQuery('')
-    } else if (parseMemberCode(q)) {
-      // A member code (typed or scanned from their card): attach that member to the sale.
-      findMember(parseMemberCode(q)).then((m) => {
+    } else if (parseMemberCode(q) || parsePassToken(q)) {
+      // A member code or website pass (typed or scanned): attach that member to the sale.
+      findMember(q).then((m) => {
         if (m) {
           setMember(m)
           setQuery('')
-        } else setError(`No member with code ${parseMemberCode(q)}.`)
+        } else setError(parsePassToken(q) ? 'That pass is not valid any more. Ask for their gym code.' : `No member with code ${parseMemberCode(q)}.`)
       })
     }
   }
@@ -577,7 +577,11 @@ function Cart({ lines, count, subtotal, total, method, setMethod, tendered, setT
 }
 
 const MEMBER_COLS = 'id, code, full_name, phone, ends_on, member_until'
-const findMember = async (code) => (await supabase.from('v_members').select(MEMBER_COLS).eq('code', code).maybeSingle()).data
+// Gym code or website pass token.
+const findMember = async (s) => {
+  const token = parsePassToken(s)
+  return (await supabase.from('v_members').select(MEMBER_COLS).eq(token ? 'qr_token' : 'code', token ?? parseMemberCode(s)).maybeSingle()).data
+}
 
 // Who a membership plan is for. Their new end date shows before charging, so staff can tell them.
 function MemberPick({ member, setMember, plans, hasPlans, onCancel }) {
@@ -589,8 +593,8 @@ function MemberPick({ member, setMember, plans, hasPlans, onCancel }) {
     let live = true
     // A code (CRDFH26-0012) finds that member; anything else searches names.
     const timer = setTimeout(async () => {
-      const code = parseMemberCode(t)
-      const rows = code ? [await findMember(code)].filter(Boolean) : (await supabase.from('v_members').select(MEMBER_COLS).ilike('full_name', `%${t}%`).order('full_name').limit(5)).data
+      const code = parseMemberCode(t) ?? parsePassToken(t)
+      const rows = code ? [await findMember(t)].filter(Boolean) : (await supabase.from('v_members').select(MEMBER_COLS).ilike('full_name', `%${t}%`).order('full_name').limit(5)).data
       if (live) setHits(rows ?? [])
     }, 200)
     return () => ((live = false), clearTimeout(timer))

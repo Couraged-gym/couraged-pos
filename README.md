@@ -5,12 +5,12 @@ Separate app and Vercel project from the marketing site (`../couraged`); same br
 
 ## Setup
 
-1. Supabase › SQL Editor: run `supabase/schema.sql` (already done), then every numbered patch in `supabase/` in order (`001_…` to `018_…`; 018 adds website member accounts, see ../couraged/README.md). Each patch is safe to run again.
+1. Supabase › SQL Editor: run `supabase/schema.sql` (already done), then every numbered patch in `supabase/` in order (`001_…` to `019_…`; 018 and 019 add website member accounts and door check-ins, see the couraged-site README). Each patch is safe to run again.
 2. Supabase › Authentication › Sign In / Providers: turn **off** "Allow new users to sign up". Create staff accounts yourself under Authentication › Users › Add user. New accounts start `inactive`; give them a role:
    ```sql
    update public.profiles set role = 'staff' where id = (select id from auth.users where email = 'staff@example.com');
    ```
-3. For the Staff page (adding logins, resetting passwords), add `SUPABASE_SERVICE_ROLE_KEY` in Vercel › Settings › Environment Variables (Supabase › Project Settings › API keys › service_role). Server only: never name it `VITE_…`, never put it in `.env.local` that gets committed. It is used only by `api/staff.js`, which checks the caller is an admin first.
+3. For the Staff page (adding logins, resetting passwords), add `SUPABASE_SERVICE_ROLE_KEY` in Vercel › Settings › Environment Variables (Supabase › Project Settings › API keys › service_role). Server only: never name it `VITE_…`, never put it in `.env.local` that gets committed. It is used only by `api/staff.js` (checks the caller is an admin) and `api/member.js` (website invites; checks the caller is staff). Also set `MEMBER_SITE_URL` to the website's address (e.g. `https://couragedph.com`) so invite emails open its set-password page; add that address to Supabase › Authentication › Redirect URLs.
 4. Copy `.env.example` to `.env.local` and fill in the URL and anon key (Project Settings › API).
 5. `npm install` then `npm run dev` (`npm run dev:tablet` to open it from a tablet on the same wifi).
 
@@ -28,7 +28,8 @@ Register people in **Members**; each gets a member code like **M0012**. To sell 
 
 - **Register** (staff + admin): checkout, cash change, receipt.
 - **Inventory** (staff + admin): stock items only. Receive deliveries, count shelves, write off spoilage, add and edit products and prices (admins can also delete). Stock only changes through these actions, and every change is in the product's History with who made it.
-- **Members** (staff + admin): register members (each gets a code like M0012), see who is active or expired, and manage plans and services under Plans.
+- **Check-in** (staff + admin): the door. Scan a member's website QR pass with the USB scanner (it types the code and Enter), or type their gym code. A big Let in / Expired / No plan answer, with Renew straight to the register; every visit is logged once per 10 minutes, with today's list beside it. Members see their visits on the website.
+- **Members** (staff + admin): register members (each gets a code like M0012), see who is active or expired, and manage plans and services under Plans. A member's sheet shows whether they have a website account, and **Invite** emails one to members who can't link themselves (no mobile on file).
 - **Sales** (admin only): every receipt with filters, cash-in-drawer totals, and voiding with a reason. **Print day summary** (pick a single day) prints an X-reading on the receipt printer for every sale that day: gross, discounts, net, voids, payments, categories and expected cash. It resets nothing and says it is not an official receipt; it is not a BIR Z-reading.
 - **Staff** (admin only): add logins with a temporary password, change access (admin, staff, inactive), set a new password. There is always at least one admin.
 - **Expenses** (admin only): one-off expenses and a monthly-bills checklist (rent, electricity, water…), with optional receipt photos/PDFs in a private storage bucket. Never deleted: voided with a reason, and every edit is logged.

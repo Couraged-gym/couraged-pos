@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { NavLink, Route, Routes, useNavigate } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
-import { CircleAlert, EyeOff, Loader2, Plus, RefreshCw, Search, UserRoundPlus } from 'lucide-react'
-import { supabase } from '../lib/supabase.js'
+import { CircleAlert, EyeOff, Globe, Loader2, Mail, Plus, RefreshCw, Search, UserRoundPlus } from 'lucide-react'
+import { serverApi, supabase } from '../lib/supabase.js'
 import { byCode, manilaToday, money, parseMemberCode } from '../lib/util.js'
 import { fetchAll } from '../lib/reports.js'
 import { fmtDay } from '../components/RangePicker.jsx'
@@ -343,6 +343,8 @@ function MemberSheet({ member, onClose, onSaved, onSell }) {
         </button>
       </form>
 
+      {!create && <AppAccess member={member} />}
+
       {!create && (
         <section className="mt-8">
           <h3 className="font-display text-xl font-extrabold uppercase leading-none">Plans paid</h3>
@@ -361,5 +363,51 @@ function MemberSheet({ member, onClose, onSaved, onSell }) {
         </section>
       )}
     </Sheet>
+  )
+}
+
+// Website account: who has one, and an invite for members who can't link themselves
+// (no mobile number on file). The server links the new login to this record.
+function AppAccess({ member }) {
+  const [email, setEmail] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const [sent, setSent] = useState(null)
+  if (member.has_app)
+    return (
+      <p className="mt-8 flex items-center gap-2 rounded-lg bg-mist px-3 py-2.5 text-sm">
+        <Globe className="size-4 shrink-0 text-smoke" aria-hidden="true" /> Website account{member.email ? `: ${member.email}` : ''}
+      </p>
+    )
+  const invite = async (e) => {
+    e.preventDefault()
+    setBusy(true)
+    setErr(null)
+    const { error } = await serverApi('/api/member', { action: 'invite', member_id: member.id, email })
+    setBusy(false)
+    if (error) return setErr(error)
+    setSent(email.trim())
+  }
+  return (
+    <section className="mt-8">
+      <h3 className="font-display text-xl font-extrabold uppercase leading-none">Website pass</h3>
+      {sent ? (
+        <div className="mt-3"><Notice>Invite sent to {sent}. They set a password from the email, then their QR pass is ready.</Notice></div>
+      ) : (
+        <form onSubmit={invite} className="mt-3 space-y-3">
+          <p className="text-sm text-smoke">
+            {member.phone ? 'They can link themselves on the website with their gym code and mobile number, or you can email them an invite.' : 'No mobile number on file, so email them an invite.'}
+          </p>
+          <div className="flex gap-2">
+            <label className="sr-only" htmlFor="invite-email">Their email</label>
+            <input id="invite-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" autoComplete="off" className={field} />
+            <button type="submit" disabled={busy} className="press flex h-11 shrink-0 items-center gap-2 rounded-lg bg-ink px-4 font-semibold text-paper disabled:opacity-40">
+              {busy ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Mail className="size-4" aria-hidden="true" />} Invite
+            </button>
+          </div>
+          {err && <Problem>{err}</Problem>}
+        </form>
+      )}
+    </section>
   )
 }

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useState } from 'react'
 import { BrowserRouter, NavLink, Route, Routes } from 'react-router'
 import { AnimatePresence, MotionConfig, motion } from 'motion/react'
-import { Banknote, BarChart3, Boxes, IdCard, LogOut, ReceiptText, ShoppingCart, UsersRound, Wallet } from 'lucide-react'
+import { Banknote, BarChart3, Boxes, IdCard, LogOut, ReceiptText, ScanLine, ShoppingCart, UsersRound, Wallet } from 'lucide-react'
 import { configured } from './lib/supabase.js'
 import { AuthProvider, useAuth } from './auth.jsx'
 import Login, { NoAccess, Setup } from './pages/Login.jsx'
@@ -10,6 +10,7 @@ import Inventory from './pages/Inventory.jsx'
 // Admin-only pages load on demand, so the register tablet never downloads them.
 const Sales = lazy(() => import('./pages/Sales.jsx'))
 const Members = lazy(() => import('./pages/Members.jsx'))
+const CheckIn = lazy(() => import('./pages/CheckIn.jsx'))
 const Staff = lazy(() => import('./pages/Staff.jsx'))
 const Expenses = lazy(() => import('./pages/Expenses.jsx'))
 const Payroll = lazy(() => import('./pages/payroll/Payroll.jsx'))
@@ -58,6 +59,7 @@ const FLOOR = ['staff', 'admin']
 const BOOKS = ['admin', 'finance']
 const NAV = [
   ['Register', '/', ShoppingCart, FLOOR],
+  ['Check-in', '/checkin', ScanLine, FLOOR],
   ['Members', '/members', IdCard, FLOOR],
   ['Sales', '/sales', ReceiptText, ['staff', 'admin', 'finance']],
   ['Inventory', '/inventory', Boxes, FLOOR],
@@ -106,6 +108,7 @@ function Shell() {
         <Route path="/" element={floor ? <Register /> : <Expenses />} />
         {floor && <Route path="/inventory" element={<Inventory />} />}
         {floor && <Route path="/members/*" element={<Members />} />}
+        {floor && <Route path="/checkin" element={<CheckIn />} />}
         <Route path="/sales" element={<Sales />} />
         {isAdmin && <Route path="/staff" element={<Staff />} />}
         {isBooks && <Route path="/expenses" element={<Expenses />} />}

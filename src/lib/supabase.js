@@ -27,3 +27,21 @@ if (supabase) {
   const rpc = supabase.rpc.bind(supabase)
   supabase.rpc = (fn, args, opts) => rpc(fn, args, opts).then((r) => ({ ...r, error: explain(fn, r.error) }))
 }
+
+// POST to a server function with the signed-in user's session: functions/api/*.js on
+// Cloudflare (live), api/*.js on Vercel (previews). Returns { data } or { error }.
+export async function serverApi(path, body) {
+  const { data } = await supabase.auth.getSession()
+  try {
+    const r = await fetch(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${data.session?.access_token ?? ''}` },
+      body: JSON.stringify(body),
+    })
+    const j = await r.json().catch(() => ({}))
+    if (r.ok) return { data: j }
+    return { error: j.error ?? (r.status === 404 ? 'This only works on the deployed site, not in npm run dev.' : `Server error (${r.status}).`) }
+  } catch {
+    return { error: 'Connection problem. Try again.' }
+  }
+}

@@ -17,6 +17,8 @@ export const moneyInput = (set) => (e) => /^\d*\.?\d{0,2}$/.test(e.target.value)
 
 // Gym codes look like CRDFH26-0012 (26 = year registered). Typed codes are matched in capitals.
 export const parseMemberCode = (s) => (/^crdfh\d{2}-\d+$/i.test(s.trim()) ? s.trim().toUpperCase() : null)
+// The QR on a member's website pass: CDQ + 32 hex (patch 018). Scanners may change the letter case.
+export const parsePassToken = (s) => (/^cdq[0-9a-f]{32}$/i.test(s.trim()) ? 'CDQ' + s.trim().slice(3).toLowerCase() : null)
 // CRDFH25-9 before CRDFH25-10 before CRDFH26-1.
 export const byCode = (a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })
 

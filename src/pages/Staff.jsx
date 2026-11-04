@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Calculator, CircleAlert, CircleCheck, Copy, Crown, KeyRound, Loader2, Plus, ShieldOff, UserRound, Wand2 } from 'lucide-react'
-import { supabase } from '../lib/supabase.js'
+import { serverApi, supabase } from '../lib/supabase.js'
 import { useAuth } from '../auth.jsx'
 import { EASE_OUT, Segmented, Sheet, fmtDateTime } from '../components/ui.jsx'
 
@@ -20,22 +20,7 @@ function makePassword() {
   return [...r].map((x) => abc[x % abc.length]).join('')
 }
 
-// Calls /api/staff with the admin's session: functions/api/staff.js on Cloudflare (live), api/staff.js on Vercel (previews).
-async function staffApi(body) {
-  const { data } = await supabase.auth.getSession()
-  try {
-    const r = await fetch('/api/staff', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${data.session?.access_token ?? ''}` },
-      body: JSON.stringify(body),
-    })
-    const j = await r.json().catch(() => ({}))
-    if (r.ok) return { data: j }
-    return { error: j.error ?? (r.status === 404 ? 'Adding staff only works on the deployed site, not in npm run dev.' : `Server error (${r.status}).`) }
-  } catch {
-    return { error: 'Connection problem. Try again.' }
-  }
-}
+const staffApi = (body) => serverApi('/api/staff', body)
 
 function RoleBadge({ role }) {
   const [label, Icon, tone] = ROLE[role] ?? ROLE.inactive

@@ -382,4 +382,22 @@ await db.exec('set role anon'); const pl = (await db.query('select * from public
 assert.ok(pl.some((p) => p.code === 'MONTH') && pl.every((p) => p.unit_cost === undefined)); ok('anyone reads the plan price list, never costs')
 await db.exec('set role anon'); await assert.rejects(db.query('select * from member_me()'), /permission denied/); await db.exec('reset role'); ok('signed-out visitors cannot call member functions')
 
+// 019: door check-ins.
+const scan = async (code) => (await as(S, 'select check_in($1) r', [code]))[0].r
+const c1 = await scan(t2.toUpperCase())
+assert.equal(c1.code, nc); assert.equal(c1.status, 'new'); assert.equal(c1.logged, true); assert.equal(c1.last_visit, null); ok('scanning a pass (any letter case) finds the member and logs the visit')
+const c2 = await scan(t2)
+assert.equal(c2.logged, false); assert.ok(c2.last_visit); assert.equal(c2.visits_this_month, 1); ok('a second scan within 10 minutes shows them again without a second visit')
+assert.equal((await scan(oldc.toLowerCase())).full_name, 'Old Member'); ok('a typed gym code checks in too')
+assert.equal(await scan(me.qr_token.replace(/.$/, (c) => (c === '0' ? '1' : '0'))), null); ok('an unknown pass returns nothing')
+await fails(W2, `select check_in($1)`, /Not authorized/, [t2]); ok('members cannot check themselves in')
+assert.equal((await as(W2, 'select * from checkins')).length, 0); ok('members cannot read the check-in log')
+await fails(S, `insert into checkins (member_id, status) values ((select id from members limit 1), 'active')`, /permission denied/); ok('check-ins are written only by scanning')
+assert.equal((await as(W2, 'select * from member_visits()')).length, 1); assert.equal((await as(W1, 'select * from member_visits()')).length, 1); ok('each member sees only their own visits')
+assert.equal((await as(W2, 'select consented from member_me()'))[0].consented, true); ok('online sign-ups have consented')
+await db.exec(`update members set consented_at = null where code = '${oldc}'`)
+assert.equal((await as(W1, 'select consented from member_me()'))[0].consented, false)
+await as(W1, `select member_consent('v1')`); assert.equal((await as(W1, 'select consented from member_me()'))[0].consented, true); ok('an invited member agrees on first sign-in')
+assert.equal((await as(S, `select has_app from v_members where code = $1`, [oldc]))[0].has_app, true); ok('staff see who has a website account')
+
 console.log('all passed')
