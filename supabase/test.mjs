@@ -354,4 +354,32 @@ await as(F, `update vouchers set status = 'voided', void_reason = 'Spoiled check
 await as(F, `update vouchers set amount = 1 where id = $1`, [vid])
 assert.equal(+(await one(`select amount from vouchers where id = '${vid}'`)).amount, 21656.25); ok('vouchers are voided, never deleted, and lock once voided')
 assert.equal(await endOf('2026-10-27', 30), '2026-11-26'); assert.equal(await endOf('2026-01-31', 30), '2026-02-27'); assert.equal(await endOf('2026-10-27', 7), '2026-11-02'); ok('one month bought Oct 27 runs to Nov 26 and renews Nov 27')
+// 018: website member accounts.
+const W1 = '00000000-0000-0000-0000-0000000000e1', W2 = '00000000-0000-0000-0000-0000000000e2'
+await db.exec(`insert into auth.users (id, email, raw_user_meta_data) values
+  ('${W1}', 'oldc@x', '{"account":"member"}'), ('${W2}', 'new@x', '{"account":"member","full_name":"New Person"}')`)
+assert.equal((await one(`select count(*)::int c from profiles where id in ('${W1}', '${W2}')`)).c, 0); ok('website sign-ups get no staff profile')
+const tk = await one(`select count(distinct qr_token)::int d, count(*)::int c from members`)
+assert.equal(tk.d, tk.c); ok('every existing member got their own QR token')
+const oldc = (await as(S, `insert into members (full_name, phone, created_by) values ('Old Member', '0917 555 0101', $1) returning code`, [S]))[0].code
+assert.equal((await as(W1, 'select * from members')).length, 0); ok('member account cannot read the members table')
+assert.equal((await as(W1, 'select * from member_me()')).length, 0); ok('unlinked account has no pass')
+assert.equal((await as(W1, `select member_link($1, '0917 555 0199', 'v1') c`, [oldc]))[0].c, null); ok('right code, wrong phone: no link')
+assert.equal((await as(W1, `select member_link($1, '+63 917 555 0101', 'v1') c`, [oldc]))[0].c, oldc); ok('code + phone on file (any format) links the record')
+const me = (await as(W1, 'select * from member_me()'))[0]
+assert.equal(me.code, oldc); assert.equal(me.email, 'oldc@x'); assert.ok(/^CDQ[0-9a-f]{32}$/.test(me.qr_token)); assert.equal(me.notes, undefined); ok('member sees own pass with QR token, never staff notes')
+assert.equal((await as(W2, `select member_link($1, '0917 555 0101', 'v1') c`, [oldc]))[0].c, null); ok('an already-linked record cannot be claimed again')
+for (let k = 0; k < 4; k++) await as(W2, `select member_link('CRDFH26-9999', '0917 000 0000', 'v1')`)
+await fails(W2, `select member_link('CRDFH26-9999', '0917 000 0000', 'v1')`, /Too many tries/); ok('five misses an hour, then linking stops')
+await fails(W2, `select member_join('New Person', '0917 555 0202', '')`, /privacy notice/); ok('joining needs privacy consent')
+const nc = (await as(W2, `select member_join('New Person', '0917 555 0202', 'v1') c`))[0].c
+assert.ok(/^CRDFH\d{2}-\d{4}$/.test(nc)); assert.equal((await as(W2, 'select * from member_me()'))[0].status, 'new'); ok(`new member joins online and gets ${nc}`)
+await fails(W2, `select member_join('Again', '0917 555 0202', 'v1')`, /already has a membership/); ok('one membership per account')
+const t2 = (await as(W2, 'select member_new_qr() t'))[0].t
+assert.notEqual(t2, me.qr_token); assert.equal((await as(W2, 'select qr_token from member_me()'))[0].qr_token, t2); ok('member can replace a leaked QR')
+await fails(W1, `select record_sale('[{"product_id":"${gid}","qty":1}]')`, /Not authorized/); ok('member account cannot ring up sales')
+await db.exec('set role anon'); const pl = (await db.query('select * from public_price_list()')).rows; await db.exec('reset role')
+assert.ok(pl.some((p) => p.code === 'MONTH') && pl.every((p) => p.unit_cost === undefined)); ok('anyone reads the plan price list, never costs')
+await db.exec('set role anon'); await assert.rejects(db.query('select * from member_me()'), /permission denied/); await db.exec('reset role'); ok('signed-out visitors cannot call member functions')
+
 console.log('all passed')
