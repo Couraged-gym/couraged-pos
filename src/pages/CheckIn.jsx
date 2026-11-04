@@ -1,33 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
-import { CircleAlert, CircleCheck, CircleDashed, CircleX, Loader2, ScanLine } from 'lucide-react'
+import { Loader2, ScanLine } from 'lucide-react'
 import { supabase } from '../lib/supabase.js'
 import { manilaToday } from '../lib/util.js'
-import { fmtDay } from '../components/RangePicker.jsx'
 import { EASE_OUT } from '../components/ui.jsx'
 import { Problem } from '../components/form.jsx'
+import { ResultCard, renewOnRegister, time } from '../components/ScanResult.jsx'
 
-const daysLeft = (end) => Math.round((Date.parse(end) - Date.parse(manilaToday())) / 864e5)
-const time = (t) => new Date(t).toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit' })
-const longDay = (d) => fmtDay(d, { month: 'short', day: 'numeric', year: 'numeric' })
-
-// Read from across the room: one colour, one icon, one word, then the detail.
-function verdict(m) {
-  if (m.status === 'new') return { word: 'No plan yet', note: 'Sell them a plan or a day pass.', Icon: CircleDashed, tone: 'bg-ink text-paper' }
-  if (m.status === 'expired') return { word: 'Expired', note: `Ended ${longDay(m.ends_on)}. Renew or sell a day pass.`, Icon: CircleX, tone: 'bg-crimson text-paper' }
-  const left = daysLeft(m.ends_on)
-  if (left <= 3)
-    return { word: 'Let in', note: left === 0 ? 'Last day today. Remind them to renew.' : `${left} day${left === 1 ? '' : 's'} left. Remind them to renew.`, Icon: CircleAlert, tone: 'bg-gold text-ink' }
-  return { word: 'Let in', note: `${m.plan_name} until ${longDay(m.ends_on)}`, Icon: CircleCheck, tone: 'bg-active text-paper' }
-}
-
+// The door. Passes scanned on other screens are handled by ScanAnywhere; here staff can
+// also type a gym code, and see everyone who came in today.
 export default function CheckIn() {
   const navigate = useNavigate()
   const input = useRef(null)
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState(null) // { scan, member } | { scan, missing }
+  const [result, setResult] = useState(null) // { scan, member } — member null when nothing matched
   const [error, setError] = useState(null)
   const [today, setToday] = useState(null)
 
@@ -55,19 +43,17 @@ export default function CheckIn() {
     setCode('')
     refocus()
     if (error) return setError(/check_in/.test(error.message) ? 'The database is missing an update: run supabase/019_checkins.sql.' : error.message)
-    setResult({ scan: Date.now(), ...(data ? { member: data } : { missing: c }) })
+    setResult({ scan: Date.now(), member: data })
     if (data?.logged) loadToday()
   }
 
-  const m = result?.member
-  const v = m && verdict(m)
-  const members = today?.length ?? 0
+  const count = today?.length ?? 0
 
   return (
     <main className="mx-auto grid max-w-[90rem] gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[1fr_24rem] lg:px-10">
       <section aria-labelledby="checkin-h">
         <h1 id="checkin-h" className="font-display text-5xl font-black uppercase leading-none">Check-in</h1>
-        <p className="mt-1 text-smoke">Scan the member's pass, or type their gym code and press Enter.</p>
+        <p className="mt-1 text-smoke">Scan the member's pass (works on any POS screen), or type their gym code here and press Enter.</p>
 
         <form onSubmit={submit} className="mt-6">
           <label htmlFor="scan" className="sr-only">
@@ -92,7 +78,11 @@ export default function CheckIn() {
             </button>
           </div>
         </form>
-        {error && <div className="mt-4"><Problem>{error}</Problem></div>}
+        {error && (
+          <div className="mt-4">
+            <Problem>{error}</Problem>
+          </div>
+        )}
 
         <div aria-live="assertive" className="mt-6">
           <AnimatePresence mode="popLayout" initial={false}>
@@ -105,44 +95,7 @@ export default function CheckIn() {
                 transition={{ duration: 0.16, ease: EASE_OUT }}
                 className="overflow-hidden rounded-2xl ring-1 ring-ink/10"
               >
-                {result.missing ? (
-                  <div className="flex items-center gap-4 bg-crimson p-6 text-paper">
-                    <CircleX className="size-12 shrink-0" aria-hidden="true" />
-                    <div>
-                      <p className="font-display text-4xl font-black uppercase leading-none">Not a pass</p>
-                      <p className="mt-1 text-paper/85">Nothing matches that scan. Ask for their gym code or register them in Members.</p>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className={`flex items-center gap-4 p-6 ${v.tone}`}>
-                      <v.Icon className="size-14 shrink-0" aria-hidden="true" />
-                      <div className="min-w-0">
-                        <p className="font-display text-6xl font-black uppercase leading-none">{v.word}</p>
-                        <p className="mt-1 font-semibold opacity-90">{v.note}</p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-end justify-between gap-4 bg-paper p-6">
-                      <div className="min-w-0">
-                        <p className="truncate font-display text-4xl font-extrabold uppercase leading-none">{m.full_name}</p>
-                        <p className="tabular mt-1 font-semibold text-smoke">{m.code}</p>
-                        <p className="mt-3 text-sm text-smoke">
-                          {m.logged ? (m.last_visit ? `Last visit ${fmtDay(new Date(m.last_visit).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }))}` : 'First visit') : `Already checked in at ${time(m.last_visit)}`} · {m.visits_this_month} this month ·{' '}
-                          {m.member_until && m.member_until >= manilaToday() ? `Annual membership until ${longDay(m.member_until)}` : 'No annual membership'}
-                        </p>
-                      </div>
-                      {m.status !== 'active' || daysLeft(m.ends_on) <= 3 ? (
-                        <button
-                          type="button"
-                          onClick={() => navigate('/', { state: { member: { id: m.id, code: m.code, full_name: m.full_name, ends_on: m.ends_on, member_until: m.member_until } } })}
-                          className="press rounded-xl bg-gold px-5 py-3 font-display text-lg font-black uppercase text-ink"
-                        >
-                          {m.status === 'new' ? 'Sell a plan' : 'Renew'}
-                        </button>
-                      ) : null}
-                    </div>
-                  </>
-                )}
+                <ResultCard result={result} onRenew={(m) => renewOnRegister(navigate, m)} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -153,7 +106,7 @@ export default function CheckIn() {
         <div className="flex items-baseline justify-between">
           <h2 id="today-h" className="font-display text-2xl font-extrabold uppercase">Today</h2>
           <p className="tabular text-sm text-smoke">
-            <b className="text-ink">{members}</b> check-in{members === 1 ? '' : 's'}
+            <b className="text-ink">{count}</b> check-in{count === 1 ? '' : 's'}
           </p>
         </div>
         {!today && <p className="mt-4 text-sm text-smoke">Loading…</p>}

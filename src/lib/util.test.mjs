@@ -1,6 +1,6 @@
 // npm run test:util — plan end dates (must match public.plan_end in patch 017).
 import assert from 'node:assert/strict'
-import { parsePassToken, planEnd } from './util.js'
+import { parsePassToken, planEnd, scanDetector } from './util.js'
 
 assert.equal(planEnd('2026-10-27', 30), '2026-11-26') // renews Nov 27
 assert.equal(planEnd('2026-10-27', 30, 2), '2026-12-26')
@@ -13,4 +13,17 @@ assert.equal(parsePassToken(` ${tok} `), 'CDQ' + 'a1b2'.repeat(8)) // scanner in
 assert.equal(parsePassToken('CDQ123'), null)
 assert.equal(parsePassToken('CRDFH26-0012'), null)
 console.log('  ✓ pass tokens are recognised in any letter case')
+{
+  const got = []
+  const type = (text, step, start = 0) => { const feed = scanDetector((t) => got.push(t)); [...text, 'Enter'].forEach((k, i) => feed(k, start + i * step)) }
+  type(tok, 8) // scanner: 8 ms a key
+  assert.deepEqual(got, ['CDQ' + 'a1b2'.repeat(8)])
+  type(tok, 150) // a person typing it
+  type('CRDFH26-0012', 8) // a gym code is not handled outside Check-in
+  assert.equal(got.length, 1)
+  const feed = scanDetector((t) => got.push(t))
+  feed('x', 0); feed('y', 5); [...tok].forEach((k, i) => feed(k, 500 + i * 8)); feed('Enter', 500 + tok.length * 8) // earlier typing is dropped after a pause
+  assert.equal(got.length, 2)
+  console.log('  ✓ only a fast burst ending in Enter counts as a scanned pass')
+}
 console.log('  ✓ plan end dates: months by calendar, years by calendar, other lengths in days\nall passed')

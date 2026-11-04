@@ -19,6 +19,21 @@ export const moneyInput = (set) => (e) => /^\d*\.?\d{0,2}$/.test(e.target.value)
 export const parseMemberCode = (s) => (/^crdfh\d{2}-\d+$/i.test(s.trim()) ? s.trim().toUpperCase() : null)
 // The QR on a member's website pass: CDQ + 32 hex (patch 018). Scanners may change the letter case.
 export const parsePassToken = (s) => (/^cdq[0-9a-f]{32}$/i.test(s.trim()) ? 'CDQ' + s.trim().slice(3).toLowerCase() : null)
+// Tells a barcode scanner from a person: a scanner types the whole code with tiny gaps
+// and ends with Enter. feed(key, ms, modifier) for every keydown; calls onToken(token)
+// when a pass code arrives that way. A gap longer than `gap` ms starts over.
+export function scanDetector(onToken, gap = 80) {
+  let buf = '', last = -Infinity
+  return (key, now, modifier = false) => {
+    if (now - last > gap) buf = ''
+    last = now
+    if (key === 'Enter') {
+      const token = parsePassToken(buf)
+      buf = ''
+      if (token) onToken(token)
+    } else if (key.length === 1 && !modifier) buf += key
+  }
+}
 // CRDFH25-9 before CRDFH25-10 before CRDFH26-1.
 export const byCode = (a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })
 
