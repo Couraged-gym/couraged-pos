@@ -1,0 +1,10 @@
+# Cloudflare Pages security headers for the POS.
+# connect-src: Supabase (data, logins, receipt photos) and the receipt helper on the front-desk PC.
+# object-src/frame-src blob: lets payslip and voucher PDFs open in their own tab to print.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; font-src 'self' data:; connect-src 'self' https://*.supabase.co wss://*.supabase.co http://127.0.0.1:9123; worker-src 'self'; manifest-src 'self'; object-src 'self' blob:; frame-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+  Strict-Transport-Security: max-age=63072000; includeSubDomains
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: microphone=(), geolocation=(), payment=(), camera=(self)
