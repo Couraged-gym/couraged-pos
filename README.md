@@ -5,7 +5,7 @@ Separate app and Vercel project from the marketing site (`../couraged`); same br
 
 ## Setup
 
-1. Supabase › SQL Editor: run `supabase/schema.sql` (already done), then every numbered patch in `supabase/` in order (`001_…` to `020_…`; 018–020 add website member accounts, door check-ins, payment history and renewal reminders, see the couraged-site README. Before 020, enable the pg_cron and pg_net extensions). Each patch is safe to run again.
+1. Supabase › SQL Editor: run `supabase/schema.sql` (already done), then every numbered patch in `supabase/` in order (`001_…` to `021_…`; 018–021 add website member accounts, door check-ins, payment history and renewal reminders, see the couraged-site README. Before 020, enable the pg_cron and pg_net extensions). Each patch is safe to run again.
 2. Supabase › Authentication › Sign In / Providers: turn **off** "Allow new users to sign up". Create staff accounts yourself under Authentication › Users › Add user. New accounts start `inactive`; give them a role:
    ```sql
    update public.profiles set role = 'staff' where id = (select id from auth.users where email = 'staff@example.com');

@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, Route, Routes, useNavigate } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
-import { CircleAlert, EyeOff, Globe, Loader2, Mail, Plus, RefreshCw, Search, UserRoundPlus } from 'lucide-react'
+import { CircleAlert, Download, EyeOff, Globe, Loader2, Mail, Plus, RefreshCw, Search, UserRoundPlus } from 'lucide-react'
+import { QRCodeCanvas } from 'qrcode.react'
+import { passCardBlob, saveImage } from '../lib/passCard.js'
 import { serverApi, supabase } from '../lib/supabase.js'
 import { byCode, manilaToday, money, parseMemberCode } from '../lib/util.js'
 import { fetchAll } from '../lib/reports.js'
@@ -343,6 +345,7 @@ function MemberSheet({ member, onClose, onSaved, onSell }) {
         </button>
       </form>
 
+      {!create && <PassCard member={member} />}
       {!create && <AppAccess member={member} />}
 
       {!create && (
@@ -408,6 +411,33 @@ function AppAccess({ member }) {
           {err && <Problem>{err}</Problem>}
         </form>
       )}
+    </section>
+  )
+}
+
+// The member's check-in QR as a branded image: print it for members without a phone,
+// or send it to them. Same code as their website pass, so making a new QR there retires it.
+function PassCard({ member }) {
+  const qr = useRef(null)
+  const [busy, setBusy] = useState(false)
+  if (!member.qr_token) return null // database patch 018 not run yet
+  const save = async () => {
+    setBusy(true)
+    try {
+      await saveImage(await passCardBlob(qr.current, { name: member.full_name, code: member.code }), `CourageD-pass-${member.code}.png`)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="mt-8">
+      <button type="button" onClick={save} disabled={busy} className="press flex h-11 w-full items-center justify-center gap-2 rounded-xl font-semibold ring-1 ring-ink/15 disabled:opacity-40">
+        {busy ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Download className="size-4" aria-hidden="true" />} Download QR card
+      </button>
+      <p className="mt-1.5 text-xs text-smoke">To print for members without a phone. If they make a new QR on the website, print a new card.</p>
+      <div hidden>
+        <QRCodeCanvas ref={qr} value={member.qr_token} size={1024} level="M" marginSize={3} fgColor="#19171B" bgColor="#FFFFFF" imageSettings={{ src: '/assets/icon-192.png', width: 144, height: 144, excavate: true }} />
+      </div>
     </section>
   )
 }

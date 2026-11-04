@@ -441,4 +441,19 @@ const gone = await one(`select user_id, email, consented_at from members where c
 assert.equal(gone.user_id, null); assert.equal(gone.email, null); assert.equal(gone.consented_at, null); ok('deleting the online account removes the login, email and consent')
 assert.equal(await scan(w2Token), null); assert.equal((await scan(nc)).code, nc); ok('their old QR stops working; the gym record and visits stay for the front desk')
 
+// 021: name + mobile, no gym code needed.
+const W3 = '00000000-0000-0000-0000-0000000000e3', W4 = '00000000-0000-0000-0000-0000000000e4', W5 = '00000000-0000-0000-0000-0000000000e5'
+await db.exec(`insert into auth.users (id, email, raw_user_meta_data) values ('${W3}', 'ana@x', '{"account":"member"}'), ('${W4}', 'bea@x', '{"account":"member"}'), ('${W5}', 'carlo@x', '{"account":"member"}')`)
+const ana = (await as(S, `insert into members (full_name, phone, created_by) values ('Ana Reyes', '0918 111 2222', $1) returning code`, [S]))[0].code
+const start = async (uid, name, phone) => (await as(uid, `select member_start($1, $2, 'v1') r`, [name, phone]))[0].r
+assert.deepEqual(await start(W3, 'ana reyes', '+63 918 111 2222'), { result: 'linked', code: ana }); ok('mobile on file + same first name links the record, no code needed')
+assert.equal((await as(W3, 'select code from member_me()'))[0].code, ana); ok('the linked member sees their existing pass')
+assert.deepEqual(await start(W4, 'Bea Reyes', '0918 111 2222'), { result: 'need_code' }); ok('same mobile under another first name asks for the gym code instead')
+assert.equal((await as(W4, 'select * from member_me()')).length, 0); ok('and links nothing')
+const carlo = await start(W5, 'Carlo Diaz', '0919 000 1111')
+assert.equal(carlo.result, 'joined'); assert.ok(/^CRDFH\d{2}-\d{4}$/.test(carlo.code)); ok('a mobile nobody has on file makes a new member')
+for (let k = 0; k < 4; k++) await start(W4, 'Guess' + k, '0918 111 2222')
+await fails(W4, `select member_start('Guess', '0918 111 2222', 'v1')`, /Too many tries/); ok('guessing names for a known number stops after five misses an hour')
+await fails(W4, `select member_start('Bea', '0918 111 2222', '')`, /privacy notice|Too many/); ok('consent still required')
+
 console.log('all passed')
