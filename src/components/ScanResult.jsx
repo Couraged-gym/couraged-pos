@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router'
+import { Link, useLocation, useNavigate } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
 import { CircleAlert, CircleCheck, CircleDashed, CircleX, X } from 'lucide-react'
 import { supabase } from '../lib/supabase.js'
@@ -23,7 +23,8 @@ function verdict(m) {
 }
 
 // The answer to one scan: a check_in() result, or { missing } when nothing matched.
-export function ResultCard({ result, onRenew }) {
+// onOpen runs when staff follow the name to the member's page.
+export function ResultCard({ result, onRenew, onOpen }) {
   const m = result.member
   if (!m)
     return (
@@ -47,7 +48,9 @@ export function ResultCard({ result, onRenew }) {
       </div>
       <div className="flex flex-wrap items-end justify-between gap-4 bg-paper p-6 text-ink">
         <div className="min-w-0">
-          <p className="truncate font-display text-4xl font-extrabold uppercase leading-none">{m.full_name}</p>
+          <Link to={`/members?open=${m.id}`} onClick={onOpen} className="block truncate font-display text-4xl font-extrabold uppercase leading-none decoration-gold decoration-[3px] underline-offset-4 hover:underline">
+            {m.full_name}
+          </Link>
           <p className="tabular mt-1 font-semibold text-smoke">{m.code}</p>
           <p className="mt-3 text-sm text-smoke">
             {m.logged ? (m.last_visit ? `Last visit ${fmtDay(manilaDay(m.last_visit))}` : 'First visit') : `Already checked in at ${time(m.last_visit)}`} · {m.visits_this_month} this month ·{' '}
@@ -111,7 +114,7 @@ export function ScanAnywhere() {
             transition={{ duration: 0.18, ease: EASE_OUT }}
             className="pointer-events-auto relative w-full max-w-2xl overflow-hidden rounded-2xl shadow-[0_24px_60px_-12px_rgb(25_23_27/0.55)] ring-1 ring-ink/10"
           >
-            <ResultCard result={result} onRenew={(m) => (setResult(null), renewOnRegister(navigate, m))} />
+            <ResultCard result={result} onRenew={(m) => (setResult(null), renewOnRegister(navigate, m))} onOpen={() => setResult(null)} />
             <button
               type="button"
               onClick={() => setResult(null)}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { NavLink, Route, Routes, useNavigate } from 'react-router'
+import { NavLink, Route, Routes, useNavigate, useSearchParams } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
 import { CircleAlert, Download, EyeOff, Globe, Loader2, Mail, Plus, RefreshCw, Search, UserRoundPlus } from 'lucide-react'
 import { QRCodeCanvas } from 'qrcode.react'
@@ -65,7 +65,13 @@ function MemberList() {
   const [error, setError] = useState(null)
   const [tab, setTab] = useState('active')
   const [q, setQ] = useState('')
-  const [open, setOpen] = useState(null) // 'new' or a member id
+  // 'new' or a member id. ?open=<id> (from the Check-in tab) opens that member.
+  const [params, setParams] = useSearchParams()
+  const [open, setOpenState] = useState(params.get('open'))
+  const setOpen = (v) => {
+    setOpenState(v)
+    if (params.has('open')) setParams({}, { replace: true })
+  }
   const [saved, setSaved] = useState(null)
 
   const load = useCallback(async () => {
@@ -169,7 +175,7 @@ function MemberList() {
       )}
 
       <AnimatePresence>
-        {open && (
+        {(open === 'new' || member) && (
           <MemberSheet
             key={open}
             member={open === 'new' ? null : member}

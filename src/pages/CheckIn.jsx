@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { AnimatePresence, motion } from 'motion/react'
 import { Loader2, ScanLine } from 'lucide-react'
 import { supabase } from '../lib/supabase.js'
@@ -25,7 +25,7 @@ export default function CheckIn() {
 
   const loadToday = useCallback(async () => {
     const from = new Date(`${manilaToday()}T00:00:00+08:00`).toISOString()
-    const { data, error } = await supabase.from('checkins').select('id, checked_at, status, members(full_name, code)').gte('checked_at', from).order('checked_at', { ascending: false })
+    const { data, error } = await supabase.from('checkins').select('id, checked_at, status, member_id, members(full_name, code)').gte('checked_at', from).order('checked_at', { ascending: false })
     if (!error) setToday(data)
   }, [])
   useEffect(() => {
@@ -115,7 +115,9 @@ export default function CheckIn() {
           {today?.map((c) => (
             <li key={c.id} className="flex items-center gap-3 py-2.5 text-sm">
               <span className="tabular w-16 shrink-0 text-smoke">{time(c.checked_at)}</span>
-              <span className="min-w-0 flex-1 truncate font-semibold">{c.members?.full_name}</span>
+              <Link to={`/members?open=${c.member_id}`} className="min-w-0 flex-1 truncate font-semibold decoration-gold decoration-2 underline-offset-4 hover:underline">
+                {c.members?.full_name}
+              </Link>
               <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${c.status === 'active' ? 'bg-active/12 text-[#0B6B35]' : c.status === 'expired' ? 'bg-crimson/10 text-crimson' : 'bg-mist text-smoke'}`}>
                 {c.status === 'active' ? 'Active' : c.status === 'expired' ? 'Expired' : 'No plan'}
               </span>
