@@ -21,6 +21,10 @@ await db.exec(`
   grant usage on schema public, auth, storage to anon, authenticated;
   grant all on storage.objects to authenticated;
   grant execute on function auth.uid() to anon, authenticated;
+  create schema net; create table net.calls (url text, headers jsonb, body jsonb);
+  create function net.http_post(url text, body jsonb default '{}', params jsonb default '{}', headers jsonb default '{}', timeout_milliseconds int default 5000)
+    returns bigint language sql as $$ insert into net.calls values (url, headers, body); select 1::bigint $$;
+  create schema vault; create table vault.decrypted_secrets (name text, decrypted_secret text);
   alter default privileges in schema public grant all on tables to anon, authenticated;
   alter default privileges in schema public grant all on sequences to anon, authenticated;
   alter default privileges in schema public grant execute on functions to anon, authenticated;
@@ -399,5 +403,42 @@ await db.exec(`update members set consented_at = null where code = '${oldc}'`)
 assert.equal((await as(W1, 'select consented from member_me()'))[0].consented, false)
 await as(W1, `select member_consent('v1')`); assert.equal((await as(W1, 'select consented from member_me()'))[0].consented, true); ok('an invited member agrees on first sign-in')
 assert.equal((await as(S, `select has_app from v_members where code = $1`, [oldc]))[0].has_app, true); ok('staff see who has a website account')
+
+// 020: payment history, deleting an online account, renewal reminders.
+const oldId = (await one(`select id from members where code = '${oldc}'`)).id
+const monthId = (await one(`select id from products where code = 'MONTH'`)).id
+await as(S, `select record_sale($1::jsonb, 'gcash', 0, null, null, null, null, null, '1234', $2)`, [JSON.stringify([{ product_id: monthId, qty: 1 }]), oldId])
+const pay = await as(W1, 'select * from member_payments()')
+assert.equal(pay.length, 1); assert.equal(pay[0].plan_name, 'Monthly'); assert.equal(+pay[0].amount, 1500); assert.equal(pay[0].payment_method, 'gcash'); assert.ok(pay[0].sale_no); ok('member sees their own payments with receipt number and amount')
+assert.equal((await as(W2, 'select * from member_payments()')).length, 0); ok("another member's payments stay hidden")
+
+await db.exec(`update members set full_name = 'Old <b>Member' where id = '${oldId}';
+  update member_periods set voided = true where member_id = '${oldId}';
+  insert into member_periods (member_id, product_id, plan_name, starts_on, ends_on)
+  values ('${oldId}', '${monthId}', 'Monthly', (now() at time zone 'Asia/Manila')::date - 27, (now() at time zone 'Asia/Manila')::date + 3)`)
+const due = (await db.query('select * from renewal_due()')).rows
+assert.equal(due.length, 1); assert.equal(due[0].kind, 'soon'); assert.equal(due[0].email, 'oldc@x'); ok('a plan ending in 3 days is due a reminder; members without an account are not')
+await assert.rejects(db.query('select send_renewal_reminders()'), /Resend key/); ok('sending needs the Resend key in Vault')
+await db.exec(`insert into vault.decrypted_secrets values ('resend_api_key', 're_test')`)
+assert.equal((await one('select send_renewal_reminders() n')).n, 1)
+const mail = await one('select * from net.calls')
+assert.equal(mail.url, 'https://api.resend.com/emails'); assert.equal(mail.headers.Authorization, 'Bearer re_test'); assert.deepEqual(mail.body.to, ['oldc@x'])
+assert.ok(mail.body.html.includes('Hi Old,') && mail.body.subject.startsWith('Your CourageD plan ends')); ok('one branded reminder is queued through Resend')
+await db.exec(`update members set full_name = '<b>Old' where id = '${oldId}'; delete from renewal_reminders`)
+await db.query('select send_renewal_reminders()')
+assert.ok((await one('select body from net.calls order by ctid desc limit 1')).body.html.includes('&lt;b&gt;Old')); ok('names are HTML-escaped in emails')
+assert.equal((await one('select send_renewal_reminders() n')).n, 0); ok('a second run the same day sends nothing')
+await db.exec('delete from renewal_reminders')
+await as(W1, 'select member_set_reminders(false)')
+assert.equal((await db.query('select * from renewal_due()')).rows.length, 0); assert.equal((await as(W1, 'select reminders from member_me()'))[0].reminders, false); ok('members can turn reminders off')
+await fails(W1, 'select send_renewal_reminders()', /permission denied/); await fails(W1, 'select * from renewal_due()', /permission denied/); ok('members cannot trigger or list reminders')
+
+const w2Token = (await as(W2, 'select qr_token from member_me()'))[0].qr_token
+await fails(S, 'select member_delete_account()', /Staff logins/); ok('staff logins cannot delete themselves here')
+await as(W2, 'select member_delete_account()')
+assert.equal((await one(`select count(*)::int c from auth.users where id = '${W2}'`)).c, 0)
+const gone = await one(`select user_id, email, consented_at from members where code = '${nc}'`)
+assert.equal(gone.user_id, null); assert.equal(gone.email, null); assert.equal(gone.consented_at, null); ok('deleting the online account removes the login, email and consent')
+assert.equal(await scan(w2Token), null); assert.equal((await scan(nc)).code, nc); ok('their old QR stops working; the gym record and visits stay for the front desk')
 
 console.log('all passed')
