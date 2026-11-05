@@ -171,7 +171,7 @@ export default function Register() {
     }
     const { data: sale } = await supabase
       .from('sales')
-      .select(`sale_no, sold_at, subtotal, discount, total, amount_tendered, change_due, payment_method, payment_ref, customer_name, sale_items(product_name, qty, line_total)${member ? ', member_periods(ends_on)' : ''}`)
+      .select(`sale_no, sold_at, subtotal, discount, total, note, amount_tendered, change_due, payment_method, payment_ref, customer_name, sale_items(product_name, qty, line_total)${member ? ', member_periods(ends_on)' : ''}`)
       .eq('id', id)
       .single()
     // The sale is saved either way; fall back to what the register knows if the read-back failed.
@@ -180,6 +180,7 @@ export default function Register() {
         sale_no: null,
         subtotal,
         discount: disc,
+        note: studentOn ? 'Student/Senior/PWD discount' : null,
         total,
         amount_tendered: paid,
         change_due: change,
