@@ -53,3 +53,6 @@ export function planEnd(start, days, qty = 1) {
   d.setUTCDate(d.getUTCDate() - 1)
   return d.toISOString().slice(0, 10)
 }
+
+// "LAST, FIRST MIDDLE" in capitals, one space after the comma. Same rule as public.format_name (027).
+export const formatName = (s) => s.replace(/\s+/g, ' ').replace(/\s*,\s*/g, ', ').trim().toUpperCase()

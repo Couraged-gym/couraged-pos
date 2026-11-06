@@ -218,7 +218,7 @@ await fails(T, `select record_sale($1::jsonb)`, /Choose the member/, [plan]); ok
 const m1 = (await as(T, `select record_sale($1::jsonb, 'cash', 0, null, null, null, null, null, null, $2) as id`, [plan, mem]))[0].id
 let vm = (await as(T, `select status, ends_on::text as ends_on from v_members where id = $1`, [mem]))[0]
 assert.equal(vm.status, 'active'); assert.equal(vm.ends_on, M1)
-assert.equal((await one(`select customer_name from sales where id = '${m1}'`)).customer_name, 'Juan Dela Cruz'); ok('first plan: active today to +29 days, sale named after the member')
+assert.equal((await one(`select customer_name from sales where id = '${m1}'`)).customer_name, 'JUAN DELA CRUZ'); ok('first plan: active today to +29 days, sale named after the member')
 const m2 = (await as(T, `select record_sale($1::jsonb, 'cash', 0, null, null, null, null, null, null, $2) as id`, [plan, mem]))[0].id
 vm = (await as(T, `select status, ends_on::text as ends_on from v_members where id = $1`, [mem]))[0]
 assert.equal(vm.ends_on, M2); ok('early renewal starts the day after the current end (+59)')
@@ -233,11 +233,11 @@ await as(T, `select record_sale($1::jsonb, 'cash', 0, null, null, null, null, nu
 vm = (await as(T, `select status, ends_on::text as ends_on from v_members where id = $1`, [old]))[0]
 assert.deepEqual([vm.status, vm.ends_on], ['active', M1]); ok('lapsed member renews from today, not from the old end date')
 await one(`insert into members (full_name) values ('New Nina')`)
-assert.equal((await as(T, `select status from v_members where full_name = 'New Nina'`))[0].status, 'new'); ok('registered without a plan shows as new')
+assert.equal((await as(T, `select status from v_members where full_name = 'NEW NINA'`))[0].status, 'new'); ok('registered without a plan shows as new')
 assert.equal((await as(X, `select * from members`)).length, (await one('select count(*)::int c from members')).c); ok('admins see members too')
 // 011: member codes.
 const codes = await as(T, `select member_no::int n, full_name from v_members order by member_no`)
-assert.deepEqual(codes.map((c) => c.n), [1, 2, 3]); assert.equal(codes[0].full_name, 'Juan Dela Cruz'); ok('members are numbered in the order they joined (M0001…)')
+assert.deepEqual(codes.map((c) => c.n), [1, 2, 3]); assert.equal(codes[0].full_name, 'JUAN DELA CRUZ'); ok('members are numbered in the order they joined (M0001…)')
 await fails(T, `update members set member_no = 99 where id = $1`, /permission denied|DEFAULT/, [mem]); ok('member codes cannot be changed')
 // 015: gym codes CRDFH26-0012.
 const yy = (await one(`select to_char(now() at time zone 'Asia/Manila', 'YY') y`)).y
@@ -245,8 +245,8 @@ assert.deepEqual((await as(T, `select code from v_members order by member_no`)).
 assert.equal((await as(T, `insert into members (full_name, code) values ('Old Card', ' crdfh${yy}-0040 ') returning code`))[0].code, `CRDFH${yy}-0040`); ok('an existing card code can be typed in')
 assert.equal((await as(T, `insert into members (full_name) values ('Next One') returning code`))[0].code, `CRDFH${yy}-0041`); ok('a blank code gets the next number this year')
 await fails(T, `insert into members (full_name, code) values ('Dup', 'CRDFH${yy}-0041')`, /duplicate key/); ok('codes are unique')
-await as(T, `update members set code = 'CRDFH25-0007' where full_name = 'Old Card'`)
-assert.equal((await as(T, `select code from members where full_name = 'Old Card'`))[0].code, 'CRDFH25-0007'); ok('staff can fix a code')
+await as(T, `update members set code = 'CRDFH25-0007' where full_name = 'OLD CARD'`)
+assert.equal((await as(T, `select code from members where full_name = 'OLD CARD'`))[0].code, 'CRDFH25-0007'); ok('staff can fix a code')
 // 012: student price.
 await as(T, `update products set student_price = 900 where id = $1`, [mid])
 assert.equal((await one(`select new_value from product_changes where product_id = '${mid}' and field = 'student_price'`)).new_value, '900.00'); ok('staff set a student price, logged in history')
@@ -392,7 +392,7 @@ const c1 = await scan(t2.toUpperCase())
 assert.equal(c1.code, nc); assert.equal(c1.status, 'new'); assert.equal(c1.logged, true); assert.equal(c1.last_visit, null); ok('scanning a pass (any letter case) finds the member and logs the visit')
 const c2 = await scan(t2)
 assert.equal(c2.logged, false); assert.ok(c2.last_visit); assert.equal(c2.visits_this_month, 1); ok('a second scan within 10 minutes shows them again without a second visit')
-assert.equal((await scan(oldc.toLowerCase())).full_name, 'Old Member'); ok('a typed gym code checks in too')
+assert.equal((await scan(oldc.toLowerCase())).full_name, 'OLD MEMBER'); ok('a typed gym code checks in too')
 assert.equal(await scan(me.qr_token.replace(/.$/, (c) => (c === '0' ? '1' : '0'))), null); ok('an unknown pass returns nothing')
 await fails(W2, `select check_in($1)`, /Not authorized/, [t2]); ok('members cannot check themselves in')
 assert.equal((await as(W2, 'select * from checkins')).length, 0); ok('members cannot read the check-in log')
@@ -426,7 +426,7 @@ assert.equal(mail.url, 'https://api.resend.com/emails'); assert.equal(mail.heade
 assert.ok(mail.body.html.includes('Hi Old,') && mail.body.subject.startsWith('Your CourageD plan ends')); ok('one branded reminder is queued through Resend')
 await db.exec(`update members set full_name = '<b>Old' where id = '${oldId}'; delete from renewal_reminders`)
 await db.query('select send_renewal_reminders()')
-assert.ok((await one('select body from net.calls order by ctid desc limit 1')).body.html.includes('&lt;b&gt;Old')); ok('names are HTML-escaped in emails')
+assert.ok((await one('select body from net.calls order by ctid desc limit 1')).body.html.includes('&lt;B&gt;Old')); ok('names are HTML-escaped in emails')
 assert.equal((await one('select send_renewal_reminders() n')).n, 0); ok('a second run the same day sends nothing')
 await db.exec('delete from renewal_reminders')
 await as(W1, 'select member_set_reminders(false)')
@@ -448,12 +448,33 @@ const ana = (await as(S, `insert into members (full_name, phone, created_by) val
 const start = async (uid, name, phone) => (await as(uid, `select member_start($1, $2, 'v1') r`, [name, phone]))[0].r
 assert.deepEqual(await start(W3, 'ana reyes', '+63 918 111 2222'), { result: 'linked', code: ana }); ok('mobile on file + same first name links the record, no code needed')
 assert.equal((await as(W3, 'select code from member_me()'))[0].code, ana); ok('the linked member sees their existing pass')
-assert.deepEqual(await start(W4, 'Bea Reyes', '0918 111 2222'), { result: 'need_code' }); ok('same mobile under another first name asks for the gym code instead')
+assert.deepEqual(await start(W4, 'Bea Reyes', '0918 111 2222'), { result: 'need_code', reason: 'phone' }); ok('same mobile under another first name asks for the gym code instead')
 assert.equal((await as(W4, 'select * from member_me()')).length, 0); ok('and links nothing')
 const carlo = await start(W5, 'Carlo Diaz', '0919 000 1111')
 assert.equal(carlo.result, 'joined'); assert.ok(/^CRDFH\d{2}-\d{4}$/.test(carlo.code)); ok('a mobile nobody has on file makes a new member')
 for (let k = 0; k < 4; k++) await start(W4, 'Guess' + k, '0918 111 2222')
 await fails(W4, `select member_start('Guess', '0918 111 2222', 'v1')`, /Too many tries/); ok('guessing names for a known number stops after five misses an hour')
 await fails(W4, `select member_start('Bea', '0918 111 2222', '')`, /privacy notice|Too many/); ok('consent still required')
+
+// 027: one name format, linked records can't be repurposed, no silent doubles, merging.
+const fmt = async (n) => (await as(S, `insert into members (full_name, created_by) values ($1, $2) returning full_name`, [n, S]))[0].full_name
+assert.equal(await fmt('lontok,augosto  antonio'), 'LONTOK, AUGOSTO ANTONIO'); assert.equal(await fmt(' Dela Cruz ,  Juan '), 'DELA CRUZ, JUAN'); ok('names save as "LAST, FIRST" in capitals, comma spacing fixed')
+const anaId = await one(`select id from members where code = '${ana}'`).then((x) => x.id)
+await fails(S, `update members set full_name = 'FEROLINO, JOULE' where id = $1`, /CourageD app/, [anaId]); ok('staff cannot type another person over a record linked to an app login')
+await fails(S, `update members set phone = '0977 857 7778' where id = $1`, /CourageD app/, [anaId]); ok('…or change its mobile')
+await as(S, `update members set full_name = 'reyes, ana' where id = $1`, [anaId]); ok('reformatting the same name is still fine')
+await as(A, `update members set phone = '0918 111 2299' where id = $1`, [anaId]); ok('an admin can fix a linked mobile')
+const W6 = '00000000-0000-0000-0000-0000000000e6', W7 = '00000000-0000-0000-0000-0000000000e7'
+await db.exec(`insert into auth.users (id, email, raw_user_meta_data) values ('${W6}', 'juan@x', '{"account":"member"}'), ('${W7}', 'jun@x', '{"account":"member"}')`)
+const desk = (await as(S, `insert into members (full_name, phone, created_by) values ('DELA CRUZ, JUANITO', '0917 555 0000', $1) returning id, code`, [S]))[0]
+assert.deepEqual(await start(W6, 'Dela Cruz, Juanito', '0917 555 0001'), { result: 'need_code', reason: 'name' }); ok('a new mobile but a matching desk name asks for the gym code, no double')
+assert.deepEqual(await start(W7, 'Juanito Santos', '0917 555 0000'), { result: 'need_code', reason: 'phone' }); ok('same mobile, same first name, other surname links nothing')
+const dbl = (await as(W6, `select member_join('Juanito Dela Cruz', '0917 555 0001', 'v1') c`))[0].c
+await db.exec(`insert into checkins (member_id, status, staff_id) values ((select id from members where code = '${dbl}'), 'new', '${S}')`)
+await fails(S, `select merge_members($1, (select id from members where code = $2))`, /admin/, [desk.id, dbl]); ok('staff cannot merge')
+assert.equal((await as(A, `select merge_members($1, (select id from members where code = $2)) c`, [desk.id, dbl]))[0].c, desk.code)
+const merged = await one(`select user_id, phone, notes, (select count(*)::int from checkins where member_id = m.id) visits from members m where id = '${desk.id}'`)
+assert.equal(merged.user_id, W6); assert.equal(merged.phone, '0917 555 0000'); assert.equal(merged.visits, 1); assert.ok(merged.notes.includes(dbl)); ok('merging moves the login and visits onto the real record and notes the old code')
+assert.equal((await one(`select count(*)::int c from members where code = '${dbl}'`)).c, 0); ok('the double is gone')
 
 console.log('all passed')

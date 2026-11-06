@@ -5,7 +5,7 @@ import { CircleAlert, Download, EyeOff, Globe, Loader2, Mail, Plus, RefreshCw, S
 import { QRCodeCanvas } from 'qrcode.react'
 import { passCardBlob, saveImage } from '../lib/passCard.js'
 import { serverApi, supabase } from '../lib/supabase.js'
-import { byCode, manilaToday, money, parseMemberCode } from '../lib/util.js'
+import { byCode, formatName, manilaToday, money, parseMemberCode } from '../lib/util.js'
 import { fetchAll } from '../lib/reports.js'
 import { fmtDay } from '../components/RangePicker.jsx'
 import { Segmented, Sheet } from '../components/ui.jsx'
@@ -65,6 +65,7 @@ function MemberList() {
   const [error, setError] = useState(null)
   const [tab, setTab] = useState('active')
   const [q, setQ] = useState('')
+  const [app, setApp] = useState('any') // 'any' | 'yes' | 'no': signed up on the CourageD app or not
   // 'new' or a member id. ?open=<id> (from the Check-in tab) opens that member.
   const [params, setParams] = useSearchParams()
   const [open, setOpenState] = useState(params.get('open'))
@@ -84,13 +85,17 @@ function MemberList() {
   }, [])
   useEffect(() => {
     load()
+    // Back on this tab: pick up members who signed up on the app meanwhile.
+    window.addEventListener('focus', load)
+    return () => window.removeEventListener('focus', load)
   }, [load])
 
   const count = (s) => (all ?? []).filter((m) => m.status === s).length
   const shown = useMemo(() => {
     const t = q.trim().toLowerCase()
-    return (all ?? []).filter((m) => (tab === 'all' || m.status === tab) && (!t || m.full_name.toLowerCase().includes(t) || m.code?.toLowerCase().includes(t) || (m.phone ?? '').includes(t)))
-  }, [all, tab, q])
+    return (all ?? []).filter((m) => (tab === 'all' || m.status === tab) && (app === 'any' || m.has_app === (app === 'yes')) && (!t || m.full_name.toLowerCase().includes(t) || m.code?.toLowerCase().includes(t) || (m.phone ?? '').includes(t)))
+  }, [all, tab, app, q])
+  const onApp = (all ?? []).filter((m) => m.has_app).length
   const member = all?.find((m) => m.id === open)
 
   return (
@@ -107,7 +112,15 @@ function MemberList() {
             ['all', `All · ${all?.length ?? 0}`],
           ]}
         />
-        <label className="relative block md:ml-auto md:w-72">
+        <label className="md:ml-auto">
+          <span className="sr-only">Show members by CourageD app sign-up</span>
+          <select value={app} onChange={(e) => setApp(e.target.value)} className={`${field} md:w-56`}>
+            <option value="any">App: everyone</option>
+            <option value="yes">On the app · {onApp}</option>
+            <option value="no">Not on the app · {(all?.length ?? 0) - onApp}</option>
+          </select>
+        </label>
+        <label className="relative block md:w-72">
           <span className="sr-only">Search members by name, code or phone</span>
           <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-smoke" aria-hidden="true" />
           <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search name, code or phone" className={`${field} pl-10`} />
@@ -150,6 +163,11 @@ function MemberList() {
                 <button type="button" onClick={() => setOpen(m.id)} className="min-w-0 flex-1 text-left">
                   <span className="block truncate font-semibold">
                     {m.code && <span className="tabular mr-1.5 rounded bg-ink px-1.5 py-0.5 text-xs font-bold text-gold">{m.code}</span>} {m.full_name}
+                    {m.has_app && (
+                      <span className="ml-1.5 inline-flex items-center gap-1 rounded bg-[#0B6B35]/10 px-1.5 py-0.5 align-middle text-xs font-bold text-[#0B6B35]">
+                        <Globe className="size-3" aria-hidden="true" /> App
+                      </span>
+                    )}
                   </span>
                   <span className="block truncate text-sm text-smoke">
                     {[tab !== 'expired' && (m.ends_on ? `Monthly ${m.ends_on >= today ? 'expires' : 'expired'} ${fmtDay(m.ends_on, { month: 'short', day: 'numeric', year: 'numeric' })}` : 'No monthly plan'), m.plan_name, m.phone].filter(Boolean).join(' · ')}
@@ -281,6 +299,7 @@ function MemberSheet({ member, onClose, onSaved, onSell }) {
   const [busy, setBusy] = useState(null)
   const [err, setErr] = useState(null)
   const [periods, setPeriods] = useState(null)
+  const [sameName, setSameName] = useState(null) // name the desk already confirmed is a different person
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }))
 
   useEffect(() => {
@@ -297,11 +316,21 @@ function MemberSheet({ member, onClose, onSaved, onSell }) {
   }, [create, member?.id])
 
   const save = async (sell) => {
-    const c = { code: f.code.trim().toUpperCase() || null, full_name: f.full_name.trim(), phone: f.phone.trim() || null, notes: f.notes.trim() || null }
+    const c = { code: f.code.trim().toUpperCase() || null, full_name: formatName(f.full_name), phone: f.phone.trim() || null, notes: f.notes.trim() || null }
     if (!c.full_name) return setErr('Enter their name.')
+    if (create && !/^[^,]+, \S/.test(c.full_name)) return setErr('Write the name as LAST NAME, FIRST NAME, for example DELA CRUZ, JUAN.')
     if (c.code && !parseMemberCode(c.code)) return setErr('Gym codes look like CRDFH26-0012. Leave it blank to give the next one.')
     setBusy(sell ? 'sell' : 'save')
     setErr(null)
+    if (create && sameName !== c.full_name) {
+      // Same surname + first name already on file? Stop a double before it's made.
+      const [last, first] = c.full_name.split(', ')
+      const { data: found } = await supabase.from('members').select('code, full_name').ilike('full_name', `${last.replace(/[%_]/g, '')}, ${first.split(' ')[0].replace(/[%_]/g, '')}%`).limit(3)
+      if (found?.length) {
+        setSameName(c.full_name)
+        return setBusy(null), setErr(`Already registered: ${found.map((m) => `${m.full_name} (${m.code ?? 'no code'})`).join(', ')}. Search for them instead. If this is a different person, press the button again.`)
+      }
+    }
     const res = create ? await supabase.from('members').insert(c).select('id, code').single() : await supabase.from('members').update(c).eq('id', member.id)
     if (res.error) return setBusy(null), setErr(res.error.code === '23505' ? `${c.code} is already someone else's code.` : missingPatch(res.error))
     if (f.paid_until !== paidBefore(periods)) {
@@ -331,8 +360,8 @@ function MemberSheet({ member, onClose, onSaved, onSell }) {
           <input type="date" value={f.paid_until} onChange={set('paid_until')} className={`${field} tabular mt-1.5`} />
         </label>
         <label className={label}>
-          Full name
-          <input autoFocus={create} value={f.full_name} onChange={set('full_name')} className={`${field} mt-1.5`} />
+          Name <span className="font-normal text-smoke">(LAST NAME, FIRST NAME)</span>
+          <input autoFocus={create} value={f.full_name} onChange={set('full_name')} onBlur={() => setF((x) => ({ ...x, full_name: formatName(x.full_name) }))} placeholder="DELA CRUZ, JUAN" autoCapitalize="characters" className={`${field} mt-1.5 uppercase`} />
         </label>
         <label className={label}>
           Mobile number <span className="font-normal text-smoke">(optional)</span>
