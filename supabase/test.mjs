@@ -477,4 +477,10 @@ const merged = await one(`select user_id, phone, notes, (select count(*)::int fr
 assert.equal(merged.user_id, W6); assert.equal(merged.phone, '0917 555 0000'); assert.equal(merged.visits, 1); assert.ok(merged.notes.includes(dbl)); ok('merging moves the login and visits onto the real record and notes the old code')
 assert.equal((await one(`select count(*)::int c from members where code = '${dbl}'`)).c, 0); ok('the double is gone')
 
+// 028: a surname spelled differently online still finds the desk record by first + middle name.
+const W8 = '00000000-0000-0000-0000-0000000000e8'
+await db.exec(`insert into auth.users (id, email, raw_user_meta_data) values ('${W8}', 'gio@x', '{"account":"member"}')`)
+await as(S, `insert into members (full_name, phone, created_by) values ('MABANGUE, GIOVANNE GOMEZ', '0927 644 9017', $1)`, [S])
+assert.deepEqual(await start(W8, 'MBANAGUE, GIOVANNE GOMEZ', '0991 362 1152'), { result: 'need_code', reason: 'name' }); ok('a misspelled surname with the same first and middle names asks for the gym code')
+
 console.log('all passed')
