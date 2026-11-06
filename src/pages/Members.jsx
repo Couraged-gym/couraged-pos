@@ -5,7 +5,7 @@ import { CircleAlert, Download, EyeOff, Globe, Loader2, Mail, Plus, RefreshCw, S
 import { QRCodeCanvas } from 'qrcode.react'
 import { passCardBlob, saveImage } from '../lib/passCard.js'
 import { serverApi, supabase } from '../lib/supabase.js'
-import { byCode, formatName, manilaToday, money, parseMemberCode } from '../lib/util.js'
+import { byCode, joinName, manilaToday, money, parseMemberCode, splitName } from '../lib/util.js'
 import { fetchAll } from '../lib/reports.js'
 import { fmtDay } from '../components/RangePicker.jsx'
 import { Segmented, Sheet } from '../components/ui.jsx'
@@ -295,7 +295,8 @@ function Plans() {
 
 function MemberSheet({ member, onClose, onSaved, onSell }) {
   const create = !member
-  const [f, setF] = useState({ code: member?.code ?? '', full_name: member?.full_name ?? '', phone: member?.phone ?? '', notes: member?.notes ?? '', paid_until: '' })
+  const [last0, first0] = splitName(member?.full_name)
+  const [f, setF] = useState({ code: member?.code ?? '', last: last0, first: first0, phone: member?.phone ?? '', notes: member?.notes ?? '', paid_until: '' })
   const [busy, setBusy] = useState(null)
   const [err, setErr] = useState(null)
   const [periods, setPeriods] = useState(null)
@@ -316,9 +317,9 @@ function MemberSheet({ member, onClose, onSaved, onSell }) {
   }, [create, member?.id])
 
   const save = async (sell) => {
-    const c = { code: f.code.trim().toUpperCase() || null, full_name: formatName(f.full_name), phone: f.phone.trim() || null, notes: f.notes.trim() || null }
+    const c = { code: f.code.trim().toUpperCase() || null, full_name: joinName(f.last, f.first), phone: f.phone.trim() || null, notes: f.notes.trim() || null }
     if (!c.full_name) return setErr('Enter their name.')
-    if (create && !/^[^,]+, \S/.test(c.full_name)) return setErr('Write the name as LAST NAME, FIRST NAME, for example DELA CRUZ, JUAN.')
+    if (create && !(f.last.trim() && f.first.trim())) return setErr('Enter both their last name and first name.')
     if (c.code && !parseMemberCode(c.code)) return setErr('Gym codes look like CRDFH26-0012. Leave it blank to give the next one.')
     setBusy(sell ? 'sell' : 'save')
     setErr(null)
@@ -359,10 +360,16 @@ function MemberSheet({ member, onClose, onSaved, onSell }) {
           Annual membership paid until <span className="font-normal text-smoke">(only if they paid before the POS)</span>
           <input type="date" value={f.paid_until} onChange={set('paid_until')} className={`${field} tabular mt-1.5`} />
         </label>
-        <label className={label}>
-          Name <span className="font-normal text-smoke">(LAST NAME, FIRST NAME)</span>
-          <input autoFocus={create} value={f.full_name} onChange={set('full_name')} onBlur={() => setF((x) => ({ ...x, full_name: formatName(x.full_name) }))} placeholder="DELA CRUZ, JUAN" autoCapitalize="characters" className={`${field} mt-1.5 uppercase`} />
-        </label>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className={label}>
+            Last name
+            <input autoFocus={create} value={f.last} onChange={set('last')} placeholder="DELA CRUZ" autoCapitalize="characters" autoComplete="off" className={`${field} mt-1.5 uppercase`} />
+          </label>
+          <label className={label}>
+            First name <span className="font-normal text-smoke">(and middle)</span>
+            <input value={f.first} onChange={set('first')} placeholder="JUAN MIGUEL" autoCapitalize="characters" autoComplete="off" className={`${field} mt-1.5 uppercase`} />
+          </label>
+        </div>
         <label className={label}>
           Mobile number <span className="font-normal text-smoke">(optional)</span>
           <input inputMode="tel" value={f.phone} onChange={set('phone')} placeholder="0917 123 4567" className={`${field} tabular mt-1.5`} />

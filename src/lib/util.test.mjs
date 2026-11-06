@@ -1,6 +1,6 @@
 // npm run test:util — plan end dates (must match public.plan_end in patch 017).
 import assert from 'node:assert/strict'
-import { formatName, parsePassToken, planEnd, scanDetector } from './util.js'
+import { formatName, joinName, parsePassToken, planEnd, scanDetector, splitName } from './util.js'
 
 assert.equal(planEnd('2026-10-27', 30), '2026-11-26') // renews Nov 27
 assert.equal(planEnd('2026-10-27', 30, 2), '2026-12-26')
@@ -32,3 +32,9 @@ assert.equal(formatName('lontok,augosto  antonio'), 'LONTOK, AUGOSTO ANTONIO')
 assert.equal(formatName(' Dela Cruz ,  Juan '), 'DELA CRUZ, JUAN')
 assert.equal(formatName('LONTOK, AUGOSTO'), 'LONTOK, AUGOSTO')
 console.log('  ✓ names format as "LAST, FIRST" with or without a space after the comma')
+assert.equal(joinName(' dela cruz ', 'juan  miguel'), 'DELA CRUZ, JUAN MIGUEL')
+assert.equal(joinName('lontok,', 'augosto'), 'LONTOK, AUGOSTO')
+assert.equal(joinName('', 'oscar'), 'OSCAR')
+assert.deepEqual(splitName('DELA CRUZ, JUAN MIGUEL'), ['DELA CRUZ', 'JUAN MIGUEL'])
+assert.deepEqual(splitName('OSCAR'), ['', 'OSCAR'])
+console.log('  ✓ Last name + First name fields join with the comma, and split back for editing')

@@ -56,3 +56,7 @@ export function planEnd(start, days, qty = 1) {
 
 // "LAST, FIRST MIDDLE" in capitals, one space after the comma. Same rule as public.format_name (027).
 export const formatName = (s) => s.replace(/\s+/g, ' ').replace(/\s*,\s*/g, ', ').trim().toUpperCase()
+// Stored name -> [last, first] for the two form fields. No comma (old records): it all goes in First.
+export const splitName = (s = '') => (s.includes(',') ? [s.slice(0, s.indexOf(',')), s.slice(s.indexOf(',') + 1)] : ['', s]).map((x) => x.trim())
+// Two form fields -> stored name. A comma typed inside a field is dropped.
+export const joinName = (last, first) => formatName([last, first].map((x) => x.replace(/,/g, ' ').trim()).filter(Boolean).join(', '))
