@@ -21,8 +21,8 @@ function presets() {
 }
 
 const REPORTS = {
-  daily: ['Daily', 'One section per day: in Excel a tab per day (like 10-12-26) plus a Summary tab.'],
-  summary: ['Summary', 'One table for the whole range, grouped by product, with a subtotal per product.'],
+  daily: ['Daily', 'A tab per day (like 10-12-26), as on the manual sheet: items and services side by side, one row per item sold, then the cash and GCash check.'],
+  summary: ['Summary', 'Summary of Items and Summary of Services tabs: every item sold, a subtotal per product, then totals per day.'],
   transactions: ['Transactions', 'Every item on every receipt, voided ones included, for auditing.'],
 }
 

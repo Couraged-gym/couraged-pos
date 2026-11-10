@@ -6,10 +6,6 @@ import { round2 } from './util.js'
 
 const TITLE = 'COURAGED FITNESS HUB PAYMENT'
 const METHOD = { cash: 'Cash', gcash: 'GCash', maya: 'Maya', card: 'Card', bank_transfer: 'Bank transfer', other: 'Other' }
-const SECTIONS = [
-  ['good', 'SOLD ITEMS'],
-  ['service', 'SERVICES'],
-]
 const cnt = (v) => ({ v, f: '0' })
 const row = (cells, style) => ({ cells, style })
 const n = (v) => Number(v) || 0
@@ -31,7 +27,7 @@ function sum(lines) {
   return t
 }
 
-// What the screen previews and the grand total row shows. Revenue and profit are after
+// What the screen previews. Revenue and profit are after
 // receipt discounts, so they match Analytics; voided sales are never in here.
 export function totals(data, day) {
   const on = (x) => !day || x.date === day
@@ -54,69 +50,85 @@ export function totals(data, day) {
   }
 }
 
-// The SOLD ITEMS and SERVICES tables, then discounts and the grand total.
-// date: 'all' puts `day` on every row (daily CSV), 'lines' puts each line's date on line rows (summary).
-function salesRows(data, { lines, day, date, group, other }) {
-  const pre = (l) => (date === 'all' ? [day] : date === 'lines' ? [l ? l.date : null] : [])
-  const head = (labels) => row([...(date ? ['Date'] : []), ...labels], 'head')
-  const pay = (x) => (other ? [round2(x.gcash), round2(x.cash), round2(x.other)] : [round2(x.gcash), round2(x.cash)])
-  const totalRow = (label, t, style) => row([...pre(), label, cnt(t.qty), null, null, round2(t.cost), round2(t.revenue - t.cost), ...pay(t), round2(t.revenue)], style)
-  const lineRow = (l) => {
-    const t = sum([l])
-    return row([...pre(l), itemOf(l), cnt(n(l.qty)), n(l.unit_cost), round2(n(l.unit_price) - n(l.unit_cost)), round2(t.cost), round2(t.revenue - t.cost), ...pay(t), round2(t.revenue)])
-  }
-  const out = []
-  for (const [kind, title] of SECTIONS) {
-    let ls = lines.filter((l) => l.kind === kind)
-    if (!ls.length) continue
-    out.push(row([...pre(), title], 'section'))
-    out.push(head(['Item', '#', 'Unit Cost', 'Add On', 'Total Cost', 'Profit', 'GCash', 'Cash', ...(other ? ['Other'] : []), 'Total']))
-    if (group) {
-      // Grouped by product (then day), with a subtotal row for products sold on more than one row.
-      const byItem = new Map()
-      for (const l of ls) byItem.set(itemOf(l), [...(byItem.get(itemOf(l)) ?? []), l])
-      for (const [name, g] of [...byItem].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
-        g.forEach((l) => out.push(lineRow(l)))
-        if (g.length > 1) out.push(totalRow(`${name} SUBTOTAL`, sum(g), 'sub'))
-      }
-    } else {
-      ls = [...ls].sort((a, b) => (itemOf(a) < itemOf(b) ? -1 : 1))
-      ls.forEach((l) => out.push(lineRow(l)))
-    }
-    out.push(totalRow(`TOTAL ${title}`, sum(ls), 'total'))
-    out.push(row([]))
-  }
-  if (!out.length) return [row([...pre(), 'No sales'])]
-  const t = totals({ ...data, lines }, day)
-  if (t.discounts > 0) {
-    const d = t.disc
-    out.push(row([...pre(), 'LESS DISCOUNTS', null, null, null, null, -t.discounts, ...(other ? [-d.gcash, -d.cash, -d.other] : [-d.gcash, -d.cash]).map(round2), -t.discounts], 'sub'))
-  }
-  out.push(row([...pre(), 'GRAND TOTAL', cnt(t.items), null, null, t.cost, t.profit, ...(other ? [t.gcash, t.cash, t.other] : [t.gcash, t.cash]), t.revenue], 'total'))
-  return out
+// One unit sold (029 'units'): its price after its share of the receipt discount, and how
+// it was paid. Labels follow the manual sheet: items as "CFH23 - FRESH WATER (500ML)",
+// services by name, a student-rate service as "Monthly_Student/Sr./PWD".
+function unitOf(u) {
+  const net = round2(n(u.unit_price) - n(u.disc))
+  const m = u.method === 'cash' || u.method === 'gcash' ? u.method : 'other'
+  const label = u.kind === 'good'
+    ? `${u.code} - ${u.name}`.toUpperCase()
+    : u.name + (u.student && n(u.disc) > 0 ? '_Student/Sr./PWD' : '')
+  return { ...u, net, cost: n(u.unit_cost), label, gcash: m === 'gcash' ? net : 0, cash: m === 'cash' ? net : 0, other: m === 'other' ? net : 0 }
+}
+const add = (us) => us.reduce((t, u) => ({ qty: t.qty + 1, cost: t.cost + u.cost, gcash: t.gcash + u.gcash, cash: t.cash + u.cash, other: t.other + u.other, total: t.total + u.net }), { qty: 0, cost: 0, gcash: 0, cash: 0, other: 0, total: 0 })
+const money = (x, other) => [round2(x.gcash), round2(x.cash), ...(other ? [round2(x.other)] : []), round2(x.total)]
+const payHead = (other) => ['GCash', 'Cash', ...(other ? ['Other'] : []), 'Total']
+
+const titleRows = (label) => [row([TITLE], 'title'), row([label], 'date'), row([])]
+const unitsOf = (data) => {
+  if (!data.units) throw new Error('Update the database (supabase/029_export_manual_layout.sql) to export in this layout.')
+  return data.units.map(unitOf)
 }
 
-function voidedRows(voided, { day, date }) {
-  if (!voided.length) return []
-  const pre = (v) => (date === 'all' ? [day] : date === 'lines' ? [v ? v.date : null] : [])
+// A day tab as the manual sheet has it: items and services side by side, one row per unit
+// sold (items first, then services, each in the order sold), totals, then the cash check.
+function dayRows(units, voided, day, other) {
+  const pw = other ? 4 : 3
+  const goods = units.filter((u) => u.kind === 'good')
+  const services = units.filter((u) => u.kind !== 'good')
+  const blank = Array(pw).fill(null)
+  const g = add(goods)
+  const s = add(services)
   return [
+    ...titleRows(`Date of Transaction: ${longDate(day)}`),
+    row([null, 'SOLD ITEMS', ...Array(2 + pw).fill(null), 'SERVICES'], 'section'),
+    row(['Item', '#', 'Unit Cost', 'Add-On', ...payHead(other), ...payHead(other)], 'head'),
+    ...goods.map((u) => row([u.label, cnt(1), u.cost, round2(u.net - u.cost), ...money(add([u]), other), ...blank])),
+    ...services.map((u) => row([u.label, cnt(1), null, null, ...blank, ...money(add([u]), other)])),
+    row(['TOTAL', cnt(g.qty + s.qty), round2(g.cost), round2(g.total - g.cost), ...money(g, other), ...money(s, other)], 'total'),
     row([]),
-    row([...pre(), 'VOIDED (not in the totals above)'], 'section'),
-    row([...(date ? ['Date'] : []), 'Items', 'Receipt No.', 'Time', 'Amount', 'Void Reason'], 'head'),
-    ...voided.map((v) => row([...pre(v), v.items ?? '', cnt(n(v.sale_no)), v.time, n(v.total), v.reason ?? ''])),
+    row([null, ...payHead(other)], 'head'),
+    row(['Items sold', ...money(g, other)]),
+    row(['Services', ...money(s, other)]),
+    row(['Total received', ...money(add([...goods, ...services]), other)], 'total'),
+    ...voidedRows(voided),
   ]
 }
 
-const titleRows = (from, to) => [row([TITLE], 'title'), row([from === to ? longDate(from) : `${longDate(from)} to ${longDate(to)}`], 'date'), row([])]
-
-// Days that had a sale or a void, in order.
-const daysOf = (data) => [...new Set([...data.lines, ...data.voided].map((x) => x.date))].sort()
-
-function summarySheet(data, other) {
-  return {
-    name: 'Summary',
-    rows: [...titleRows(data.from, data.to), ...salesRows(data, { lines: data.lines, date: 'lines', group: true, other }), ...voidedRows(data.voided, { date: 'lines' })],
+// Summary of Items / Summary of Services: every unit sold grouped by product with a
+// subtotal per product, the section total, then the same money per day.
+function summaryRows(units, kind, other) {
+  const items = kind === 'good'
+  const mine = units.filter((u) => (u.kind === 'good') === items)
+  const cost = (t) => (items ? [round2(t.cost), round2(t.total - t.cost)] : [])
+  const out = [row([null, items ? 'SOLD ITEMS' : 'SERVICES'], 'section'), row(['Date', 'Item', '#', ...(items ? ['Unit Cost', 'Add-On'] : []), ...payHead(other)], 'head')]
+  const byLabel = new Map()
+  for (const u of mine) byLabel.set(u.label, [...(byLabel.get(u.label) ?? []), u])
+  for (const [, us] of [...byLabel].sort((x, y) => (x[0] < y[0] ? -1 : 1))) {
+    for (const u of us) out.push(row([u.date, u.label, cnt(1), ...(items ? [u.cost, round2(u.net - u.cost)] : []), ...money(add([u]), other)]))
+    const t = add(us)
+    out.push(row([null, null, cnt(t.qty), ...cost(t), ...money(t, other)], 'sub'))
   }
+  const all = add(mine)
+  out.push(row([null, `TOTAL ${items ? 'SOLD ITEMS' : 'SERVICES'}`, cnt(all.qty), ...cost(all), ...money(all, other)], 'total'), row([]))
+  out.push(row(['Date', null, null, ...(items ? ['Unit Cost', 'Add-On'] : []), ...payHead(other)], 'head'))
+  for (const d of [...new Set(mine.map((u) => u.date))].sort()) {
+    const t = add(mine.filter((u) => u.date === d))
+    out.push(row([d, null, null, ...cost(t), ...money(t, other)]))
+  }
+  out.push(row([null, 'TOTAL', null, ...cost(all), ...money(all, other)], 'total'))
+  return out
+}
+
+function voidedRows(voided) {
+  if (!voided.length) return []
+  return [
+    row([]),
+    row([null, 'VOIDED (not in the totals above)'], 'section'),
+    row(['Date', 'Items', 'Receipt No.', 'Time', 'Amount', 'Void Reason'], 'head'),
+    ...voided.map((v) => row([v.date, v.items ?? '', cnt(n(v.sale_no)), v.time, n(v.total), v.reason ?? ''])),
+  ]
 }
 
 function logSheet(data) {
@@ -125,7 +137,7 @@ function logSheet(data) {
   return {
     name: 'Transactions',
     rows: [
-      ...titleRows(data.from, data.to),
+      ...titleRows(`${longDate(data.from)} to ${longDate(data.to)}`),
       row(['Receipt No.', 'Date', 'Time', 'Staff', 'Item', '#', 'Unit Price', 'Line Total', 'Payment', 'Status'], 'head'),
       ...log.map((x) => row([cnt(n(x.sale_no)), x.date, x.time, x.staff, itemOf(x), cnt(n(x.qty)), n(x.unit_price), n(x.line_total), METHOD[x.method] ?? x.method, x.status === 'voided' ? 'Voided' : 'Completed'])),
       row(['TOTAL COMPLETED (before discounts)', null, null, null, null, cnt(done.reduce((s, x) => s + n(x.qty), 0)), null, round2(done.reduce((s, x) => s + n(x.line_total), 0)), null, null], 'total'),
@@ -133,21 +145,25 @@ function logSheet(data) {
   }
 }
 
-// report: 'daily' | 'summary' | 'transactions'; format: 'csv' | 'xlsx'. Returns the sheets.
+// report: 'daily' | 'summary' | 'transactions'; format: 'csv' | 'xlsx'. Returns the sheets;
+// a CSV is one file, so its sheets are joined into one.
 export function buildExport(data, report, format) {
   const other = data.other_methods.length > 0
   if (report === 'transactions') return [logSheet(data)]
-  if (report === 'summary') return [summarySheet(data, other)]
-  const days = daysOf(data)
-  const forDay = (day, date) => [
-    ...salesRows(data, { lines: data.lines.filter((l) => l.date === day), day, date, other }),
-    ...voidedRows(data.voided.filter((v) => v.date === day), { day, date }),
-  ]
-  if (format === 'csv') {
-    // One file; a Date column on every row tells the days apart.
-    return [{ name: 'Daily', rows: [...titleRows(data.from, data.to), ...days.flatMap((d) => [...forDay(d, 'all'), row([])])] }]
-  }
-  return [...days.map((d) => ({ name: tabName(d), rows: [...titleRows(d, d), ...forDay(d)] })), summarySheet(data, other)]
+  const units = unitsOf(data)
+  const period = `Period covered: ${longDate(data.from)} to ${longDate(data.to)}`
+  const sheets =
+    report === 'summary'
+      ? [
+          { name: 'Summary of Items', rows: [...titleRows(period), ...summaryRows(units, 'good', other)] },
+          { name: 'Summary of Services', rows: [...titleRows(period), ...summaryRows(units, 'service', other), ...voidedRows(data.voided)] },
+        ]
+      : [...new Set([...units, ...data.voided].map((x) => x.date))].sort().map((d) => ({
+          name: tabName(d),
+          rows: dayRows(units.filter((u) => u.date === d), data.voided.filter((v) => v.date === d), d, other),
+        }))
+  if (format === 'csv') return [{ name: report, rows: sheets.flatMap((x) => [...x.rows, row([])]) }]
+  return sheets
 }
 
 export const fileName = (report, from, to, format) => `couraged_${report}_${from}_to_${to}.${format}`

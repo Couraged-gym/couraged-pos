@@ -280,6 +280,9 @@ await fails(S, `select sales_export(current_date, current_date)`, /Only an admin
 const p9 = (await one(`select id from products where code = 'CFH09'`)).id
 await as(S, `insert into stock_movements (product_id, movement_type, qty, unit_cost, created_by) values ($1, 'purchase', 10, 39, $2)`, [p9, S])
 await as(T, `select record_sale($1::jsonb, 'gcash', 5, null, null, null, null, null, '1234')`, [JSON.stringify([{ product_id: p9, qty: 3 }])]) // with a ₱5 discount
+const pDay = (await one(`select id from products where code = 'DAY'`)).id
+const stuId = (await as(T, `select record_sale($1::jsonb, 'cash', 20, null, null, 'Student/Senior/PWD discount') as id`, [JSON.stringify([{ product_id: p9, qty: 1 }, { product_id: pDay, qty: 1 }])]))[0].id
+const stuNo = (await one(`select sale_no from sales where id = '${stuId}'`)).sale_no
 const ex = (await as(A, `select sales_export($1::date - 6, $1::date) as r`, [today]))[0].r
 const rep = (await as(A, `select sales_report($1::date - 6, $1::date) as r`, [today]))[0].r
 const sum = (rows, f) => rows.reduce((s, x) => s + f(x), 0)
@@ -294,6 +297,11 @@ assert.equal(ex.voided.length, rep.voids.count); assert.ok(ex.voided.some((v) =>
 await as(A, `update products set selling_price = 999 where id = $1`, [mid])
 const ex2 = (await as(A, `select sales_export($1::date - 6, $1::date) as r`, [today]))[0].r
 assert.deepEqual(ex2.lines, ex.lines); ok('changing a price today leaves past export rows untouched')
+assert.equal(ex.units.length, +rep.totals.items)
+assert.equal(Math.round(sum(ex.units, (u) => u.unit_price - u.disc) * 100), Math.round(rep.totals.revenue * 100)); ok('029: one unit row per item sold; prices after discount add up to report revenue')
+assert.ok(ex.units.every((u) => u.disc >= 0)); ok('029: no unit gets a negative discount')
+const stu = ex.units.filter((u) => u.sale_no === stuNo)
+assert.deepEqual(stu.map((u) => [u.code, +u.disc, u.student]).sort(), [['CFH09', 0, true], ['DAY', 20, true]]); ok('029: a student discount on a mixed receipt goes on the service, not the item')
 assert.equal(ex.log, null); assert.equal((await as(A, `select sales_export($1::date, $1::date, true) as r`, [today]))[0].r.log.length > 0, true); ok('transaction log only when asked for')
 // 014: day summary.
 const ds = (await as(S, `select day_summary($1::date) as r`, [today]))[0].r
